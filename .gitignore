@@ -1,0 +1,8 @@
+_IGNORE_whatsapp_scheduler/
+__pycache__/
+env/
+venv/
+*.pyc
+node_modules/
+*.log
+*.pid
