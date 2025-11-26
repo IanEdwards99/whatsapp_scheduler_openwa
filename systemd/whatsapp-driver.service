@@ -1,0 +1,16 @@
+[Unit]
+Description=WhatsApp Driver Server (open-wa)
+After=network.target
+
+[Service]
+Type=simple
+User=iedwards
+WorkingDirectory=/home/iedwards/development/whatsapp_scheduler_openwa
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
