@@ -1,0 +1,17 @@
+[Unit]
+Description=WhatsApp Background Scheduler
+After=network.target whatsapp-driver.service
+Requires=whatsapp-driver.service
+
+[Service]
+Type=simple
+User=iedwards
+WorkingDirectory=/home/iedwards/development/whatsapp_scheduler_openwa
+ExecStart=/usr/bin/python3 background_scheduler.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
