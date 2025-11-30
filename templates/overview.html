@@ -5,6 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Schedule Overview - WhatsApp Scheduler</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .status-pending {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        .status-completed {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status-failed {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .schedule-item {
+            position: relative;
+        }
+        .datetime-info {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -15,6 +45,7 @@
                 <a href="/add" class="nav-link">Add Schedule</a>
                 <a href="/send_now" class="nav-link">Send Now</a>
                 <a href="/overview" class="nav-link active">Overview</a>
+                <a href="/history" class="nav-link">History</a>
             </nav>
         </header>
 
@@ -33,10 +64,25 @@
                                         📊
                                     {% endif %}
                                     {{ schedule.contact }}
+                                    <span class="status-badge status-{{ schedule.get('status', 'pending') }}">
+                                        {{ schedule.get('status', 'pending')|upper }}
+                                    </span>
                                 </h3>
                                 <p><strong>Type:</strong> {{ schedule.type|capitalize }}</p>
                                 <p><strong>Time:</strong> ⏰ {{ schedule.time }}</p>
                                 <p><strong>Repeat:</strong> {{ schedule.recurring or 'Once' }}</p>
+                                
+                                {% if schedule.get('last_run') %}
+                                    <div class="datetime-info">
+                                        Last run: {{ schedule.last_run[:19]|replace('T', ' ') }}
+                                    </div>
+                                {% endif %}
+                                
+                                {% if schedule.get('created_at') %}
+                                    <div class="datetime-info">
+                                        Created: {{ schedule.created_at[:19]|replace('T', ' ') }}
+                                    </div>
+                                {% endif %}
                                 
                                 {% if schedule.type == 'message' %}
                                     <p style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee;">

@@ -12,7 +12,7 @@ node server.js > logs/driver.log 2>&1 &
 DRIVER_PID=$!
 echo "Driver PID: $DRIVER_PID"
 
-sleep 5
+sleep 10
 
 # Start background scheduler
 echo "Starting background scheduler..."

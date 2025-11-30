@@ -1,8 +1,18 @@
-_IGNORE_whatsapp_scheduler/
+_IGNORE_*
+.session/
+SESSION.data.json
+WA.data.json
 __pycache__/
 env/
 venv/
 *.pyc
 node_modules/
+logs/
 *.log
 *.pid
+schedules/schedule.json
+schedules/message_history.json
+# WhatsApp session data (sensitive!)
+whatsapp_scheduler.data.json
+whatsapp_scheduler_MULTI_DEVICE.data.json
+*.data.json

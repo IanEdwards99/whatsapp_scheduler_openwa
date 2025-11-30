@@ -5,6 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WhatsApp Scheduler - Home</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .status-badge {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .status-pending {
+            background-color: #ffc107;
+            color: #000;
+        }
+        .status-completed {
+            background-color: #28a745;
+            color: #fff;
+        }
+        .status-failed {
+            background-color: #dc3545;
+            color: #fff;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -15,6 +36,7 @@
                 <a href="/add" class="nav-link">Add Schedule</a>
                 <a href="/send_now" class="nav-link">Send Now</a>
                 <a href="/overview" class="nav-link">Overview</a>
+                <a href="/history" class="nav-link">History</a>
             </nav>
         </header>
 
@@ -40,6 +62,7 @@
                                 <th>Contact</th>
                                 <th>Content</th>
                                 <th>Time</th>
+                                <th>Status</th>
                                 <th>Recurring</th>
                                 <th>Action</th>
                             </tr>
@@ -64,6 +87,11 @@
                                         {% endif %}
                                     </td>
                                     <td><strong>{{ schedule.time }}</strong></td>
+                                    <td>
+                                        <span class="status-badge status-{{ schedule.get('status', 'pending') }}">
+                                            {{ schedule.get('status', 'pending') }}
+                                        </span>
+                                    </td>
                                     <td>{{ schedule.recurring or 'Once' }}</td>
                                     <td>
                                         <a href="/delete/{{ loop.index0 }}" class="action-link delete-link">🗑️ Delete</a>

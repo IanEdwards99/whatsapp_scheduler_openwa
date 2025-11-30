@@ -149,22 +149,34 @@ class MessageScheduler:
         
         if 0 <= index < len(schedules):
             schedule = schedules[index]
-            schedule['last_run'] = datetime.now().isoformat()
+            now = datetime.now()
+            schedule['last_run'] = now.isoformat()
             schedule['status'] = 'completed' if success else 'failed'
             
-            # If recurring, create next occurrence
+            # If recurring, calculate next run time as full datetime and set status back to pending
             if success and schedule.get('recurring'):
-                next_time = self._calculate_next_run(schedule['time'], schedule['recurring'])
+                # Calculate the next run based on current time + recurring interval
+                next_time_str = self._calculate_next_run(schedule['time'], schedule['recurring'])
                 
-                new_schedule = schedule.copy()
-                new_schedule['time'] = next_time
-                new_schedule['next_run'] = next_time
-                new_schedule['status'] = 'pending'
-                new_schedule['last_run'] = None
-                new_schedule['attempts'] = 0
+                # Parse to get next full datetime
+                next_hour, next_min = map(int, next_time_str.split(':'))
+                next_run_dt = now.replace(hour=next_hour, minute=next_min, second=0, microsecond=0)
                 
-                schedules.append(new_schedule)
-                logger.info(f"Created next occurrence: {schedule['contact']} at {next_time}")
+                # If the calculated time is in the past, add the interval again
+                if next_run_dt <= now:
+                    if schedule['recurring'] == 'daily':
+                        next_run_dt += timedelta(days=1)
+                    elif schedule['recurring'] == 'weekly':
+                        next_run_dt += timedelta(weeks=1)
+                    elif schedule['recurring'] == 'monthly':
+                        next_run_dt += timedelta(days=30)
+                
+                # Update the same schedule entry instead of creating a new one
+                schedule['next_run'] = next_run_dt.isoformat()
+                schedule['status'] = 'pending'
+                schedule['attempts'] = 0
+                
+                logger.info(f"Next occurrence scheduled: {schedule['contact']} at {next_run_dt.strftime('%Y-%m-%d %H:%M')}")
             
             self._save_schedules_locked(schedules)
     
@@ -172,14 +184,37 @@ class MessageScheduler:
         """Get all pending schedules that should run now"""
         schedules = self._load_schedules_locked()
         now = datetime.now()
-        current_time = now.strftime("%H:%M")
         
         pending = []
         for idx, schedule in enumerate(schedules):
-            if schedule.get('status') == 'pending':
-                schedule_time = schedule.get('next_run') or schedule.get('time')
-                if schedule_time and schedule_time <= current_time:
-                    pending.append((idx, schedule))
+            # Only process schedules with 'pending' status
+            if schedule.get('status') != 'pending':
+                continue
+            
+            # Get the scheduled time
+            next_run = schedule.get('next_run')
+            schedule_time = schedule.get('time')
+            
+            # Check if it's time to run
+            should_run = False
+            
+            if next_run:
+                # If next_run is a full ISO datetime, compare datetimes
+                try:
+                    next_run_dt = datetime.fromisoformat(next_run)
+                    should_run = now >= next_run_dt
+                except (ValueError, TypeError):
+                    # If next_run is just HH:MM format, compare times
+                    if isinstance(next_run, str) and ':' in next_run:
+                        current_time = now.strftime("%H:%M")
+                        should_run = current_time >= next_run
+            elif schedule_time:
+                # Fallback to time field if next_run is not set
+                current_time = now.strftime("%H:%M")
+                should_run = current_time >= schedule_time
+            
+            if should_run:
+                pending.append((idx, schedule))
         
         return pending
     

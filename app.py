@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from scheduler_core import MessageScheduler
+from message_history import MessageHistory
 import requests
 from requests.exceptions import RequestException
 import subprocess
@@ -9,6 +10,7 @@ import time
 app = Flask(__name__)
 app.secret_key = "your_secret_key_change_in_production"
 scheduler = MessageScheduler("schedules/schedule.json")
+history = MessageHistory()  # Add history tracking
 
 DRIVER_SERVER_URL = "http://127.0.0.1:5001"
 
@@ -92,7 +94,18 @@ def send_now():
                     flash("Please provide contact and message.", "error")
                     return redirect(url_for("send_now"))
                 
-                if scheduler.send_message_via_api(contact, message):
+                success = scheduler.send_message_via_api(contact, message)
+                
+                # Log to history
+                history.add_entry(
+                    entry_type='message',
+                    contact=contact,
+                    content={'message': message},
+                    status='sent' if success else 'failed',
+                    metadata={'source': 'manual'}
+                )
+                
+                if success:
                     flash("Message sent successfully!", "success")
                 else:
                     flash("Failed to send message.", "error")
@@ -110,7 +123,18 @@ def send_now():
                     flash("Poll options must be unique.", "error")
                     return redirect(url_for("send_now"))
                 
-                if scheduler.send_poll_via_api(contact, question, options):
+                success = scheduler.send_poll_via_api(contact, question, options)
+                
+                # Log to history
+                history.add_entry(
+                    entry_type='poll',
+                    contact=contact,
+                    content={'question': question, 'options': options},
+                    status='sent' if success else 'failed',
+                    metadata={'source': 'manual'}
+                )
+                
+                if success:
                     flash("Poll sent successfully!", "success")
                 else:
                     flash("Failed to send poll.", "error")
@@ -127,6 +151,14 @@ def send_now():
 def overview():
     schedules = scheduler.load_schedules()
     return render_template("overview.html", schedules=schedules)
+
+
+@app.route("/history")
+def view_history():
+    """View message history"""
+    recent = history.get_recent(100)
+    stats = history.get_stats()
+    return render_template("history.html", history=recent, stats=stats)
 
 
 @app.route("/api/status")
