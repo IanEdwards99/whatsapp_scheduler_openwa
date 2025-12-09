@@ -17,6 +17,8 @@
 import wa from '@open-wa/wa-automate';
 import express from 'express';
 import bodyParser from 'body-parser';
+import QRCode from 'qrcode';
+import fs from 'fs';
 
 const app = express();
 app.use(bodyParser.json());
@@ -24,6 +26,34 @@ app.use(bodyParser.json());
 // Global client state
 let client = null;           // WhatsApp client instance
 let clientReady = false;     // Connection readiness flag
+let qrCodeData = null;       // Store QR code data for PNG export
+
+/**
+ * Save QR code as PNG file
+ * 
+ * Converts base64 QR code data to PNG image file for headless deployments.
+ * Enables scanning QR via browser (http://pi-ip:5001/qr_code.png) or SCP download
+ * when running on Raspberry Pi without display.
+ * 
+ * @param {string} qrData - Base64 QR code data from open-wa
+ * @returns {Promise<void>}
+ */
+async function saveQRCodeAsPNG(qrData) {
+  try {
+    await QRCode.toFile('qr_code.png', qrData, {
+      width: 512,
+      margin: 2,
+      color: {
+        dark: '#000000',
+        light: '#ffffff'
+      }
+    });
+    console.log('QR code saved as qr_code.png');
+    console.log('Access it at: http://localhost:5001/qr_code.png');
+  } catch (error) {
+    console.error('Error saving QR code as PNG:', error);
+  }
+}
 
 /**
  * Initialize WhatsApp Web client
@@ -46,6 +76,14 @@ async function initializeClient() {
       multiDevice: true,                     // Support new multi-device WhatsApp
       useChrome: true,                       // Use Chromium instead of bundled Chromium
       executablePath: '/usr/bin/chromium-browser',  // System Chromium path (adjust for your OS)
+      
+      // QR code callback for PNG export (headless deployment support)
+      qr: async (base64Qr) => {
+        console.log('QR Code received! Saving as PNG...');
+        qrCodeData = base64Qr;
+        await saveQRCodeAsPNG(base64Qr);
+        console.log('Scan the QR code to authenticate WhatsApp Web');
+      },
       
       // Chromium launch arguments for stability on Linux/Raspberry Pi
       chromiumArgs: [
@@ -71,6 +109,13 @@ async function initializeClient() {
 
     clientReady = true;
     console.log('WhatsApp client initialized successfully!');
+    
+    // Clean up QR code file after successful authentication
+    if (qrCodeData && fs.existsSync('qr_code.png')) {
+      fs.unlinkSync('qr_code.png');
+      console.log('QR code PNG deleted (authentication successful)');
+      qrCodeData = null;
+    }
   } catch (error) {
     console.error('Error initializing WhatsApp client:', error);
     clientReady = false;
@@ -88,6 +133,28 @@ async function initializeClient() {
  */
 app.get('/status', (req, res) => {
   res.json({ status: 'ok', ready: clientReady });
+});
+
+/**
+ * GET /qr_code.png
+ * Serve QR code PNG for scanning
+ * 
+ * Serves the QR code image file for headless deployments.
+ * Access via browser at http://pi-ip:5001/qr_code.png to scan with phone.
+ * File is automatically deleted after successful authentication.
+ * 
+ * @returns {200} PNG image file
+ * @returns {404} { status: 'error', message: string } - if no QR code available
+ */
+app.get('/qr_code.png', (req, res) => {
+  if (fs.existsSync('qr_code.png')) {
+    res.sendFile('qr_code.png', { root: '.' });
+  } else {
+    res.status(404).json({ 
+      status: 'error', 
+      message: 'QR code not available (either not generated yet or already authenticated)' 
+    });
+  }
 });
 
 /**
@@ -255,6 +322,7 @@ app.listen(PORT, () => {
   console.log(`WhatsApp Driver API server running on port ${PORT}`);
   console.log('Available endpoints:');
   console.log('  GET  /status       - Health check');
+  console.log('  GET  /qr_code.png  - QR code PNG (for headless scanning)');
   console.log('  GET  /get_groups   - List all groups');
   console.log('  POST /send_message - Send text message');
   console.log('  POST /send_poll    - Send poll (native/buttons/list)');
