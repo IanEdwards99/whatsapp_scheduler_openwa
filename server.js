@@ -78,21 +78,27 @@ async function initializeClient() {
       executablePath: '/usr/bin/chromium-browser',  // System Chromium path (adjust for your OS)
       
       // QR code callback for PNG export (headless deployment support)
-      qr: async (base64Qr) => {
-        console.log('QR Code received! Saving as PNG...');
+      qrCallback: async (base64Qr, page) => {
+        console.log('=== QR Code callback triggered! ===');
+        console.log('QR data length:', base64Qr?.length);
         qrCodeData = base64Qr;
         await saveQRCodeAsPNG(base64Qr);
-        console.log('Scan the QR code to authenticate WhatsApp Web');
+        console.log('QR code saved! Access at: http://localhost:5001/qr_code.png');
+        
+        // Alternative: Take a screenshot of the whole page
+        try {
+          await page.screenshot({ path: 'qr_screenshot.png', fullPage: true });
+          console.log('Full page screenshot saved as qr_screenshot.png');
+        } catch (err) {
+          console.error('Screenshot failed:', err.message);
+        }
       },
       
-      // Chromium launch arguments for stability on Linux/Raspberry Pi
+      // Minimal Chromium args for Raspberry Pi (avoid conflicts with multiDevice)
       chromiumArgs: [
         '--no-sandbox',                      // Required for running as root or on Pi
-        '--disable-setuid-sandbox',          // Additional sandbox bypass
-        '--disable-dev-shm-usage',           // Use /tmp instead of /dev/shm (prevents crashes)
-        '--disable-extensions',              // Don't load browser extensions
-        '--no-zygote',                       // Disable zygote process (reduce memory)
-        '--single-process'                   // Run in single process (lighter on Pi)
+        '--disable-setuid-sandbox',           // Additional sandbox bypass
+        '--disable-dev-shm-usage'
       ],
       
       qrTimeout: 0,                          // No timeout for QR scan (wait indefinitely)
@@ -153,6 +159,26 @@ app.get('/qr_code.png', (req, res) => {
     res.status(404).json({ 
       status: 'error', 
       message: 'QR code not available (either not generated yet or already authenticated)' 
+    });
+  }
+});
+
+/**
+ * GET /qr_screenshot.png
+ * Serve full page screenshot for debugging
+ * 
+ * Serves the full WhatsApp Web page screenshot (fallback if QR callback fails).
+ * 
+ * @returns {200} PNG image file
+ * @returns {404} { status: 'error', message: string } - if screenshot not available
+ */
+app.get('/qr_screenshot.png', (req, res) => {
+  if (fs.existsSync('qr_screenshot.png')) {
+    res.sendFile('qr_screenshot.png', { root: '.' });
+  } else {
+    res.status(404).json({ 
+      status: 'error', 
+      message: 'Screenshot not available' 
     });
   }
 });
@@ -321,11 +347,12 @@ const PORT = 5001;
 app.listen(PORT, () => {
   console.log(`WhatsApp Driver API server running on port ${PORT}`);
   console.log('Available endpoints:');
-  console.log('  GET  /status       - Health check');
-  console.log('  GET  /qr_code.png  - QR code PNG (for headless scanning)');
-  console.log('  GET  /get_groups   - List all groups');
-  console.log('  POST /send_message - Send text message');
-  console.log('  POST /send_poll    - Send poll (native/buttons/list)');
+  console.log('  GET  /status            - Health check');
+  console.log('  GET  /qr_code.png       - QR code PNG (for headless scanning)');
+  console.log('  GET  /qr_screenshot.png - Full page screenshot (fallback)');
+  console.log('  GET  /get_groups        - List all groups');
+  console.log('  POST /send_message      - Send text message');
+  console.log('  POST /send_poll         - Send poll (native/buttons/list)');
   
   // Initialize WhatsApp client asynchronously (non-blocking)
   // First run will show QR code in console for phone scanning
