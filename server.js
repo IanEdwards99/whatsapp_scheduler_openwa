@@ -78,28 +78,23 @@ async function initializeClient() {
       executablePath: '/usr/bin/chromium-browser',  // System Chromium path (adjust for your OS)
       
       // QR code callback for PNG export (headless deployment support)
-      qrCallback: async (base64Qr, page) => {
+      qr: async (base64Qr) => {
         console.log('=== QR Code callback triggered! ===');
         console.log('QR data length:', base64Qr?.length);
         qrCodeData = base64Qr;
         await saveQRCodeAsPNG(base64Qr);
         console.log('QR code saved! Access at: http://localhost:5001/qr_code.png');
-        
-        // Alternative: Take a screenshot of the whole page
-        try {
-          await page.screenshot({ path: 'qr_screenshot.png', fullPage: true });
-          console.log('Full page screenshot saved as qr_screenshot.png');
-        } catch (err) {
-          console.error('Screenshot failed:', err.message);
-        }
       },
       
       // Minimal Chromium args for Raspberry Pi (avoid conflicts with multiDevice)
       chromiumArgs: [
         '--no-sandbox',                      // Required for running as root or on Pi
-        '--disable-setuid-sandbox',           // Additional sandbox bypass
-        '--disable-dev-shm-usage'
+        '--disable-setuid-sandbox'           // Additional sandbox bypass
       ],
+      
+      // Disable automatic QR refresh to give more time for scanning
+      qrRefreshS: 60,                        // Refresh QR every 60 seconds (default is 20)
+      qrLogSkip: true,                       // Skip terminal QR display (use our PNG instead)
       
       qrTimeout: 0,                          // No timeout for QR scan (wait indefinitely)
       authTimeout: 0,                        // No timeout for authentication
