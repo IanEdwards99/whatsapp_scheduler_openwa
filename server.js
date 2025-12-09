@@ -92,9 +92,8 @@ async function initializeClient() {
         '--disable-setuid-sandbox'           // Additional sandbox bypass
       ],
       
-      // Disable automatic QR refresh to give more time for scanning
+      // Give more time for QR scanning
       qrRefreshS: 60,                        // Refresh QR every 60 seconds (default is 20)
-      qrLogSkip: true,                       // Skip terminal QR display (use our PNG instead)
       
       qrTimeout: 0,                          // No timeout for QR scan (wait indefinitely)
       authTimeout: 0,                        // No timeout for authentication
