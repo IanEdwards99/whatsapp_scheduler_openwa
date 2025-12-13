@@ -13,17 +13,24 @@ echo ""
 echo "Stopping all services..."
 
 # Try to stop systemd services (if they exist and are active)
-if systemctl is-active --quiet whatsapp-driver.service; then
-    echo "Stopping systemd services..."
-    sudo systemctl stop whatsapp-driver.service
-    sudo systemctl stop whatsapp-scheduler.service
-    sudo systemctl stop whatsapp-flask.service
+if systemctl is-active --quiet whatsapp-driver.service 2>/dev/null; then
+    echo "Stopping systemd services (timeout 10s)..."
+    sudo timeout 10 systemctl stop whatsapp-flask.service 2>/dev/null || true
+    sudo timeout 10 systemctl stop whatsapp-scheduler.service 2>/dev/null || true
+    sudo timeout 10 systemctl stop whatsapp-driver.service 2>/dev/null || true
+    
+    # If still running, force kill
+    if systemctl is-active --quiet whatsapp-driver.service 2>/dev/null; then
+        echo "Force killing driver service..."
+        sudo systemctl kill whatsapp-driver.service 2>/dev/null || true
+    fi
 fi
 
-# Kill any manually started processes
-pkill -f "node server.js"
-pkill -f "background_scheduler.py"
-pkill -f "app.py"
+# Kill any manually started processes and Chromium
+pkill -f "node server.js" 2>/dev/null || true
+pkill -f "background_scheduler.py" 2>/dev/null || true
+pkill -f "app.py" 2>/dev/null || true
+pkill -f chromium 2>/dev/null || true
 sleep 2
 
 # Remove session data and QR code

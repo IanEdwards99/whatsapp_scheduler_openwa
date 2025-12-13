@@ -84,6 +84,7 @@ async function initializeClient() {
     console.log('Working directory:', process.cwd());
     
     let qrReceived = false;
+    let screenshotInterval = null;
     
     // Use ev (event) mode to get page access before authentication completes
     wa.ev.on('qr.**', async (qrData, sessionId) => {
@@ -95,6 +96,18 @@ async function initializeClient() {
       await saveQRCodeAsPNG(qrData);
       console.log('✅ QR code saved!');
       console.log('   Access at: http://<your-ip>:5001/qr_code.png');
+    });
+    
+    // Also listen for page events to take screenshots as fallback
+    wa.ev.on('PAGE.**', async (page) => {
+      console.log('📄 PAGE EVENT - Taking screenshot...');
+      try {
+        await page.screenshot({ path: 'qr_screenshot.png', fullPage: true });
+        console.log('✅ Screenshot saved to qr_screenshot.png');
+        console.log('   Access at: http://<your-ip>:5001/qr_screenshot.png');
+      } catch (e) {
+        console.log('Screenshot error:', e.message);
+      }
     });
     
     // Create client with qrCallback as fallback
@@ -112,6 +125,7 @@ async function initializeClient() {
       disableSpins: true,
       skipUpdateCheck: true,
       logConsole: false,
+      logQR: true,  // Enable QR logging to console
       killProcessOnBrowserClose: true,
       
       // Fallback QR callback in case ev.on doesn't fire
@@ -124,7 +138,30 @@ async function initializeClient() {
           console.log('   Access at: http://<your-ip>:5001/qr_code.png');
         }
       },
+      
+      // Get page reference for screenshots
+      onPageCreated: async (page) => {
+        console.log('📄 PAGE CREATED - Starting screenshot timer...');
+        // Take periodic screenshots until authenticated
+        screenshotInterval = setInterval(async () => {
+          if (clientReady) {
+            clearInterval(screenshotInterval);
+            return;
+          }
+          try {
+            await page.screenshot({ path: 'qr_screenshot.png', fullPage: true });
+            console.log('📸 Screenshot updated - Access at: http://<your-ip>:5001/qr_screenshot.png');
+          } catch (e) {
+            console.log('Screenshot error:', e.message);
+          }
+        }, 5000); // Every 5 seconds
+      },
     });
+
+    // Clear screenshot interval after authentication
+    if (screenshotInterval) {
+      clearInterval(screenshotInterval);
+    }
 
     console.log('✅ Authentication successful!');
 
