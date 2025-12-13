@@ -51,6 +51,7 @@ def add_schedule():
             question = request.form.get("question")
             options = request.form.get("options").split(",")
             options = [opt.strip() for opt in options if opt.strip()]
+            allow_multi_select = request.form.get("allow_multi_select") == "on"
             
             if not contact or not question or not options or not time:
                 flash("Please provide contact, question, options, and time.", "error")
@@ -60,7 +61,7 @@ def add_schedule():
                 flash("Poll options must be unique.", "error")
                 return redirect(url_for("add_schedule"))
             
-            scheduler.add_poll_schedule(contact, question, options, time, recurring)
+            scheduler.add_poll_schedule(contact, question, options, time, recurring, allow_multi_select)
             flash("Poll schedule added successfully!", "success")
         
         return redirect(url_for("index"))
@@ -114,6 +115,7 @@ def send_now():
                 question = request.form.get("question")
                 options = request.form.get("options").split(",")
                 options = [opt.strip() for opt in options if opt.strip()]
+                allow_multi_select = request.form.get("allow_multi_select") == "on"
                 
                 if not contact or not question or not options:
                     flash("Please provide contact, question, and options.", "error")
@@ -123,13 +125,13 @@ def send_now():
                     flash("Poll options must be unique.", "error")
                     return redirect(url_for("send_now"))
                 
-                success = scheduler.send_poll_via_api(contact, question, options)
+                success = scheduler.send_poll_via_api(contact, question, options, allow_multi_select)
                 
                 # Log to history
                 history.add_entry(
                     entry_type='poll',
                     contact=contact,
-                    content={'question': question, 'options': options},
+                    content={'question': question, 'options': options, 'allow_multi_select': allow_multi_select},
                     status='sent' if success else 'failed',
                     metadata={'source': 'manual'}
                 )

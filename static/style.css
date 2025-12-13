@@ -165,6 +165,37 @@ input[type="radio"]:checked + .radio-button {
     transition: all 0.3s ease;
 }
 
+/* Checkbox styling for multi-select option */
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    padding: 12px 15px;
+    border-radius: 6px;
+    border: 2px solid #ddd;
+    transition: all 0.3s ease;
+    background-color: white;
+    font-weight: 500;
+}
+
+.checkbox-label:hover {
+    border-color: #25d366;
+    background-color: #f0fff4;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #25d366;
+    cursor: pointer;
+}
+
+.checkbox-label:has(input[type="checkbox"]:checked) {
+    background-color: #e6fff0;
+    border-color: #25d366;
+}
+
 .form-actions {
     display: flex;
     gap: 15px;

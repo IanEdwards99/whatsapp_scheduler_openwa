@@ -100,6 +100,9 @@
                                             <br><small>• {{ option }}</small>
                                         {% endfor %}
                                     </p>
+                                    <p>
+                                        <strong>Multi-select:</strong> {{ 'Yes' if schedule.get('allow_multi_select') else 'No' }}
+                                    </p>
                                 {% endif %}
                             </div>
                         {% endfor %}

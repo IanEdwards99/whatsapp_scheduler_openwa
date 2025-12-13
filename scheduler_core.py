@@ -111,7 +111,7 @@ class MessageScheduler:
         self._save_schedules_locked(schedules)
         logger.info(f"Added message schedule for {contact} at {time}")
     
-    def add_poll_schedule(self, contact: str, question: str, options: List[str], time: str, recurring: Optional[str] = None):
+    def add_poll_schedule(self, contact: str, question: str, options: List[str], time: str, recurring: Optional[str] = None, allow_multi_select: bool = False):
         """Add a poll schedule with status tracking"""
         schedules = self._load_schedules_locked()
         
@@ -122,6 +122,7 @@ class MessageScheduler:
             'options': options,
             'time': time,
             'recurring': recurring,
+            'allow_multi_select': allow_multi_select,
             'status': 'pending',
             'next_run': time,
             'last_run': None,
@@ -255,13 +256,13 @@ class MessageScheduler:
             logger.error(f"✗ Error: {e}")
             return False
     
-    def send_poll_via_api(self, contact: str, question: str, options: List[str]) -> bool:
+    def send_poll_via_api(self, contact: str, question: str, options: List[str], allow_multi_select: bool = False) -> bool:
         """Send poll via driver API"""
         try:
             resolved = self._resolve_group_name(contact)
             response = requests.post(
                 f"{self.driver_server_url}/send_poll",
-                json={"contact": resolved, "question": question, "options": options},
+                json={"contact": resolved, "question": question, "options": options, "allowMultiSelect": allow_multi_select},
                 timeout=30
             )
             if response.status_code == 200:

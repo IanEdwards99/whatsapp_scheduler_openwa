@@ -180,16 +180,17 @@ class EnhancedScheduleProcessor:
             elif sched_type == 'poll':
                 question = schedule.get('question')
                 options = schedule.get('options', [])
+                allow_multi_select = schedule.get('allow_multi_select', False)
                 logger.info(f"Sending poll to {contact}: {question[:50]}...")
                 
                 # Send via driver API
-                success = self.scheduler.send_poll_via_api(contact, question, options)
+                success = self.scheduler.send_poll_via_api(contact, question, options, allow_multi_select)
                 
                 # Log to message history with metadata
                 self.history.add_entry(
                     entry_type='poll',
                     contact=contact,
-                    content={'question': question, 'options': options},
+                    content={'question': question, 'options': options, 'allow_multi_select': allow_multi_select},
                     status='sent' if success else 'failed',
                     metadata={
                         'source': 'scheduled',

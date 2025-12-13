@@ -27,6 +27,7 @@ app.use(bodyParser.json());
 let client = null;           // WhatsApp client instance
 let clientReady = false;     // Connection readiness flag
 let qrCodeData = null;       // Store QR code data for PNG export
+let pageRef = null;          // Store page reference for screenshots
 
 /**
  * Save QR code as PNG file
@@ -35,21 +36,32 @@ let qrCodeData = null;       // Store QR code data for PNG export
  * Enables scanning QR via browser (http://pi-ip:5001/qr_code.png) or SCP download
  * when running on Raspberry Pi without display.
  * 
- * @param {string} qrData - Base64 QR code data from open-wa
+ * @param {string} qrData - Base64 QR code data from open-wa (already an image)
  * @returns {Promise<void>}
  */
 async function saveQRCodeAsPNG(qrData) {
   try {
-    await QRCode.toFile('qr_code.png', qrData, {
-      width: 512,
-      margin: 2,
-      color: {
-        dark: '#000000',
-        light: '#ffffff'
-      }
-    });
-    console.log('QR code saved as qr_code.png');
-    console.log('Access it at: http://localhost:5001/qr_code.png');
+    // QR data from open-wa is already a base64 encoded PNG image
+    // Format: "data:image/png;base64,iVBORw0KGgo..."
+    if (qrData.startsWith('data:image')) {
+      // Extract the base64 part after the comma
+      const base64Data = qrData.split(',')[1];
+      const buffer = Buffer.from(base64Data, 'base64');
+      fs.writeFileSync('qr_code.png', buffer);
+      console.log('QR code saved as qr_code.png');
+      console.log('Access it at: http://localhost:5001/qr_code.png');
+    } else {
+      // Fallback: try to generate QR from raw data
+      await QRCode.toFile('qr_code.png', qrData, {
+        width: 512,
+        margin: 2,
+        color: {
+          dark: '#000000',
+          light: '#ffffff'
+        }
+      });
+      console.log('QR code saved as qr_code.png');
+    }
   } catch (error) {
     console.error('Error saving QR code as PNG:', error);
   }
@@ -69,48 +81,47 @@ async function saveQRCodeAsPNG(qrData) {
 async function initializeClient() {
   try {
     console.log('Initializing WhatsApp client...');
+    
+    let qrReceived = false;
+    
+    // Use ev (event) mode to get page access before authentication completes
+    wa.ev.on('qr.**', async (qrData, sessionId) => {
+      console.log('🎯 QR EVENT RECEIVED!');
+      qrCodeData = qrData;
+      
+      // Save QR as PNG
+      await saveQRCodeAsPNG(qrData);
+      console.log('✅ QR code saved!');
+      console.log('   Access at: http://localhost:5001/qr_code.png');
+    });
+    
+    // Create client
     client = await wa.create({
-      sessionId: 'whatsapp_scheduler',      // Unique session identifier
-      sessionDataPath: './',                 // Store session data in current directory
-      headless: true,                        // Run browser without GUI (essential for Pi)
-      multiDevice: true,                     // Support new multi-device WhatsApp
-      useChrome: true,                       // Use Chromium instead of bundled Chromium
-      executablePath: '/usr/bin/chromium-browser',  // System Chromium path (adjust for your OS)
+      sessionId: 'whatsapp_scheduler',
+      sessionDataPath: './',
+      headless: true,
+      multiDevice: true,
+      useChrome: true,
+      executablePath: '/usr/bin/chromium-browser',
       
-      // QR code callback for PNG export (headless deployment support)
-      qr: async (base64Qr) => {
-        console.log('=== QR Code callback triggered! ===');
-        console.log('QR data length:', base64Qr?.length);
-        qrCodeData = base64Qr;
-        await saveQRCodeAsPNG(base64Qr);
-        console.log('QR code saved! Access at: http://localhost:5001/qr_code.png');
-      },
-      
-      // Minimal Chromium args for Raspberry Pi (avoid conflicts with multiDevice)
-      chromiumArgs: [
-        '--no-sandbox',                      // Required for running as root or on Pi
-        '--disable-setuid-sandbox'           // Additional sandbox bypass
-      ],
-      
-      // Give more time for QR scanning
-      qrRefreshS: 60,                        // Refresh QR every 60 seconds (default is 20)
-      
-      qrTimeout: 0,                          // No timeout for QR scan (wait indefinitely)
-      authTimeout: 0,                        // No timeout for authentication
-      disableSpins: true,                    // Disable spinner animations in console
-      skipUpdateCheck: true,                 // Don't check for library updates on startup
-      logConsole: false                      // Don't log browser console messages
+      qrRefreshS: 60,
+      qrTimeout: 0,
+      authTimeout: 0,
+      disableSpins: true,
+      skipUpdateCheck: true,
+      logConsole: false,
+      killProcessOnBrowserClose: true,
     });
 
-    // Set up message listener for incoming messages (optional, for logging/debugging)
+    console.log('✅ Authentication successful!');
+
     client.onMessage(msg => {
       console.log(`Message received from ${msg.from}: ${msg.body}`);
     });
 
     clientReady = true;
-    console.log('WhatsApp client initialized successfully!');
+    console.log('✅ WhatsApp client initialized successfully!');
     
-    // Clean up QR code file after successful authentication
     if (qrCodeData && fs.existsSync('qr_code.png')) {
       fs.unlinkSync('qr_code.png');
       console.log('QR code PNG deleted (authentication successful)');
@@ -278,6 +289,7 @@ app.post('/send_message', async (req, res) => {
  * @param {string} contact - Phone number, group name, or JID
  * @param {string} question - Poll question text
  * @param {string[]} options - Array of poll options
+ * @param {boolean} [allowMultiSelect=false] - Allow selecting multiple options in polls
  * @returns {200} { status: 'ok', method: 'poll'|'buttons'|'list' }
  * @returns {400} { status: 'error', message: string } - missing fields
  * @returns {500} { status: 'error', message: string } - send failed
@@ -287,7 +299,7 @@ app.post('/send_poll', async (req, res) => {
     return res.status(500).json({ status: 'error', message: 'WhatsApp client not ready' });
   }
 
-  const { contact, question, options } = req.body;
+  const { contact, question, options, allowMultiSelect = false } = req.body;
   if (!contact || !question || !options || options.length === 0) {
     return res.status(400).json({ status: 'error', message: 'Missing required fields' });
   }
@@ -302,7 +314,7 @@ app.post('/send_poll', async (req, res) => {
     // Group JIDs end with @g.us (e.g., 120363404652820092@g.us)
     if (chatId.endsWith('@g.us')) {
       // sendPoll(to: GroupChatId, name: string, options: string[], quotedMsgId?: MessageId, allowMultiSelect?: boolean)
-      await client.sendPoll(chatId, question, options);
+      await client.sendPoll(chatId, question, options, undefined, allowMultiSelect);
       return res.json({ status: 'ok', method: 'poll' });
     }
 

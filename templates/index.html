@@ -84,6 +84,9 @@
                                         {% else %}
                                             <small><strong>Q:</strong> {{ schedule.question|truncate(40, True, '...') }}</small><br>
                                             <small><strong>Options:</strong> {{ (schedule.options|join(', '))|truncate(50, True, '...') }}</small>
+                                            {% if schedule.get('allow_multi_select') %}
+                                                <br><small><em>☑️ Multi-select enabled</em></small>
+                                            {% endif %}
                                         {% endif %}
                                     </td>
                                     <td><strong>{{ schedule.time }}</strong></td>
