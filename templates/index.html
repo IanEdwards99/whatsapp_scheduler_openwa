@@ -61,7 +61,7 @@
                                 <th>Type</th>
                                 <th>Contact</th>
                                 <th>Content</th>
-                                <th>Time</th>
+                                <th>Next Run</th>
                                 <th>Status</th>
                                 <th>Recurring</th>
                                 <th>Action</th>
@@ -89,7 +89,15 @@
                                             {% endif %}
                                         {% endif %}
                                     </td>
-                                    <td><strong>{{ schedule.time }}</strong></td>
+                                    <td>
+                                        {% set next_run = schedule.get('next_run', schedule.time) %}
+                                        {% if 'T' in next_run %}
+                                            <strong>{{ next_run[:10] }}</strong><br>
+                                            <small>{{ next_run[11:16] }}</small>
+                                        {% else %}
+                                            <strong>{{ next_run }}</strong>
+                                        {% endif %}
+                                    </td>
                                     <td>
                                         <span class="status-badge status-{{ schedule.get('status', 'pending') }}">
                                             {{ schedule.get('status', 'pending') }}

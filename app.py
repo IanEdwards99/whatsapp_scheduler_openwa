@@ -36,15 +36,15 @@ def add_schedule():
     if request.method == "POST":
         schedule_type = request.form.get("type")
         contact = request.form.get("contact")
-        time = request.form.get("time")
+        datetime_str = request.form.get("datetime")  # New: full datetime
         recurring = request.form.get("recurring")
         
         if schedule_type == "message":
             message = request.form.get("message")
-            if not contact or not message or not time:
-                flash("Please provide contact, message, and time.", "error")
+            if not contact or not message or not datetime_str:
+                flash("Please provide contact, message, and date/time.", "error")
                 return redirect(url_for("add_schedule"))
-            scheduler.add_message_schedule(contact, message, time, recurring)
+            scheduler.add_message_schedule(contact, message, datetime_str, recurring)
             flash("Message schedule added successfully!", "success")
         
         elif schedule_type == "poll":
@@ -53,15 +53,15 @@ def add_schedule():
             options = [opt.strip() for opt in options if opt.strip()]
             allow_multi_select = request.form.get("allow_multi_select") == "on"
             
-            if not contact or not question or not options or not time:
-                flash("Please provide contact, question, options, and time.", "error")
+            if not contact or not question or not options or not datetime_str:
+                flash("Please provide contact, question, options, and date/time.", "error")
                 return redirect(url_for("add_schedule"))
             
             if len(options) != len(set(options)):
                 flash("Poll options must be unique.", "error")
                 return redirect(url_for("add_schedule"))
             
-            scheduler.add_poll_schedule(contact, question, options, time, recurring, allow_multi_select)
+            scheduler.add_poll_schedule(contact, question, options, datetime_str, recurring, allow_multi_select)
             flash("Poll schedule added successfully!", "success")
         
         return redirect(url_for("index"))

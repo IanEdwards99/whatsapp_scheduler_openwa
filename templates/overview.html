@@ -69,7 +69,14 @@
                                     </span>
                                 </h3>
                                 <p><strong>Type:</strong> {{ schedule.type|capitalize }}</p>
-                                <p><strong>Time:</strong> ⏰ {{ schedule.time }}</p>
+                                <p><strong>Next Run:</strong> ⏰ 
+                                    {% set next_run = schedule.get('next_run', schedule.time) %}
+                                    {% if 'T' in next_run %}
+                                        {{ next_run[:10] }} at {{ next_run[11:16] }}
+                                    {% else %}
+                                        {{ next_run }}
+                                    {% endif %}
+                                </p>
                                 <p><strong>Repeat:</strong> {{ schedule.recurring or 'Once' }}</p>
                                 
                                 {% if schedule.get('last_run') %}

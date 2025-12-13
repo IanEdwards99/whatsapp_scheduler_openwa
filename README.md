@@ -191,26 +191,125 @@ python3 app.py
 
 ### Option 4: Systemd Services (Production)
 
-**Install services:**
+Systemd services run your processes in the background, survive reboots, and restart automatically on crashes.
+
+#### Initial Setup
+
+**1. Copy service files to systemd:**
 ```bash
 sudo cp systemd/*.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable whatsapp-driver whatsapp-scheduler whatsapp-flask
-sudo systemctl start whatsapp-driver whatsapp-scheduler whatsapp-flask
 ```
 
-**Check status:**
+**2. First-time QR Authentication:**
+
+Before enabling services, you need to authenticate once:
 ```bash
+# Start driver manually first
+node server.js
+```
+Then access `http://<your-ip>:5001/qr_code.png` in a browser and scan the QR code with your phone. Once authenticated, stop the server (Ctrl+C) and proceed.
+
+**3. Enable services to start on boot:**
+```bash
+# Enable driver and scheduler to always run
+sudo systemctl enable whatsapp-driver whatsapp-scheduler
+
+# Optional: Enable Flask too, or leave disabled for manual starts
+sudo systemctl disable whatsapp-flask
+```
+
+**4. Start the services:**
+```bash
+sudo systemctl start whatsapp-driver
+sudo systemctl start whatsapp-scheduler
+# Start Flask only if enabled or when needed
+sudo systemctl start whatsapp-flask
+```
+
+#### Recommended Setup
+
+For most users, the **driver** and **scheduler** should always run, but the **Flask web UI** only needs to run when adding or editing schedules:
+
+| Service | On Boot | Purpose |
+|---------|---------|---------|
+| `whatsapp-driver` | ✅ enabled | Always running - WhatsApp connection |
+| `whatsapp-scheduler` | ✅ enabled | Always running - Sends scheduled messages |
+| `whatsapp-flask` | ❌ disabled | Start manually when editing schedules |
+
+#### Starting/Stopping Flask Manually
+
+```bash
+# When you want to add or edit schedules:
+sudo systemctl start whatsapp-flask
+# Then visit http://<your-ip>:5000
+
+# When done editing:
+sudo systemctl stop whatsapp-flask
+
+# Or just leave it running - it uses minimal resources
+```
+
+#### Common Commands
+
+```bash
+# Check status
 sudo systemctl status whatsapp-driver
 sudo systemctl status whatsapp-scheduler
 sudo systemctl status whatsapp-flask
+
+# Restart a service
+sudo systemctl restart whatsapp-driver
+
+# Stop a service
+sudo systemctl stop whatsapp-driver
+
+# View live logs
+sudo journalctl -u whatsapp-driver -f
+
+# View last 100 log lines
+sudo journalctl -u whatsapp-driver -n 100
+
+# View logs since boot
+sudo journalctl -u whatsapp-driver -b
 ```
 
-**View logs:**
+#### After Editing Service Files
+
+If you modify the `.service` files in the `systemd/` folder:
 ```bash
-sudo journalctl -u whatsapp-driver -f
-sudo journalctl -u whatsapp-scheduler -f
-sudo journalctl -u whatsapp-flask -f
+# Copy updated files
+sudo cp systemd/*.service /etc/systemd/system/
+
+# Tell systemd to re-read the files (required!)
+sudo systemctl daemon-reload
+
+# Restart affected services
+sudo systemctl restart whatsapp-driver
+```
+
+#### Troubleshooting
+
+**Service won't stop (hangs):**
+```bash
+sudo systemctl kill whatsapp-driver
+sudo pkill -9 chromium
+```
+
+**QR code not appearing after fresh start:**
+```bash
+# Check if screenshot is available as fallback
+curl http://<your-ip>:5001/qr_screenshot.png
+
+# Or check the logs
+sudo journalctl -u whatsapp-driver -n 50
+```
+
+**Session expired (need to re-authenticate):**
+```bash
+./fresh_start.sh  # Clears session data
+sudo systemctl restart whatsapp-driver
+# Then scan QR at http://<your-ip>:5001/qr_code.png
 ```
 
 ## API Endpoints

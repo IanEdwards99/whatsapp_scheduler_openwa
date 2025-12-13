@@ -70,18 +70,19 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="time">Schedule Time (HH:MM)</label>
-                        <input type="time" name="time" id="time" required>
-                    </div>
-
-                    <div class="form-group">
                         <label for="recurring">Repeat</label>
-                        <select name="recurring" id="recurring">
+                        <select name="recurring" id="recurring" onchange="toggleRecurringOptions()">
                             <option value="">No - Send Once</option>
                             <option value="daily">Daily</option>
                             <option value="weekly">Weekly</option>
                             <option value="monthly">Monthly</option>
                         </select>
+                    </div>
+
+                    <div class="form-group" id="datetime-group">
+                        <label for="datetime">Send Date & Time</label>
+                        <input type="datetime-local" name="datetime" id="datetime" required>
+                        <small id="recurring-hint" style="display:none;"></small>
                     </div>
 
                     <div class="form-actions">
@@ -107,6 +108,60 @@
                 pollContent.style.display = 'block';
             }
         }
+        
+        function toggleRecurringOptions() {
+            const recurring = document.getElementById('recurring').value;
+            const hint = document.getElementById('recurring-hint');
+            const datetimeInput = document.getElementById('datetime');
+            
+            if (recurring === 'weekly') {
+                hint.style.display = 'block';
+                updateWeeklyHint();
+                datetimeInput.addEventListener('change', updateWeeklyHint);
+            } else if (recurring === 'monthly') {
+                hint.style.display = 'block';
+                updateMonthlyHint();
+                datetimeInput.addEventListener('change', updateMonthlyHint);
+            } else if (recurring === 'daily') {
+                hint.style.display = 'block';
+                hint.textContent = '📅 Will repeat every day at the selected time';
+            } else {
+                hint.style.display = 'none';
+            }
+        }
+        
+        function updateWeeklyHint() {
+            const datetimeInput = document.getElementById('datetime');
+            const hint = document.getElementById('recurring-hint');
+            if (datetimeInput.value) {
+                const date = new Date(datetimeInput.value);
+                const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                const dayName = days[date.getDay()];
+                hint.textContent = '📅 Will repeat every ' + dayName + ' at ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            }
+        }
+        
+        function updateMonthlyHint() {
+            const datetimeInput = document.getElementById('datetime');
+            const hint = document.getElementById('recurring-hint');
+            if (datetimeInput.value) {
+                const date = new Date(datetimeInput.value);
+                const day = date.getDate();
+                const suffix = (day === 1 || day === 21 || day === 31) ? 'st' : 
+                               (day === 2 || day === 22) ? 'nd' : 
+                               (day === 3 || day === 23) ? 'rd' : 'th';
+                hint.textContent = '📅 Will repeat on the ' + day + suffix + ' of each month';
+            }
+        }
+        
+        // Set default datetime to now + 1 hour
+        document.addEventListener('DOMContentLoaded', function() {
+            const now = new Date();
+            now.setHours(now.getHours() + 1);
+            now.setMinutes(0);
+            const localISOTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+            document.getElementById('datetime').value = localISOTime;
+        });
     </script>
 </body>
 </html>

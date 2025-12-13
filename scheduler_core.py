@@ -90,18 +90,40 @@ class MessageScheduler:
             logger.error(f"Error calculating next run: {e}")
             return current_time_str
     
-    def add_message_schedule(self, contact: str, message: str, time: str, recurring: Optional[str] = None):
-        """Add a message schedule with status tracking"""
+    def add_message_schedule(self, contact: str, message: str, schedule_datetime: str, recurring: Optional[str] = None):
+        """Add a message schedule with status tracking
+        
+        Args:
+            contact: Phone number or group name
+            message: Message text
+            schedule_datetime: Full datetime string (YYYY-MM-DDTHH:MM or ISO format)
+            recurring: None, 'daily', 'weekly', or 'monthly'
+        """
         schedules = self._load_schedules_locked()
+        
+        # Parse the datetime - handle both 'YYYY-MM-DDTHH:MM' (from HTML) and ISO format
+        try:
+            if 'T' in schedule_datetime and len(schedule_datetime) == 16:
+                # HTML datetime-local format: 2025-12-14T19:30
+                dt = datetime.strptime(schedule_datetime, "%Y-%m-%dT%H:%M")
+            else:
+                # Try ISO format or fallback to just time
+                dt = datetime.fromisoformat(schedule_datetime) if '-' in schedule_datetime else None
+        except:
+            dt = None
+        
+        # Store as ISO format for full datetime support
+        next_run = dt.isoformat() if dt else schedule_datetime
+        time_only = dt.strftime("%H:%M") if dt else schedule_datetime
         
         schedule = {
             'type': 'message',
             'contact': contact,
             'message': message,
-            'time': time,
+            'time': time_only,  # Keep for display (HH:MM)
             'recurring': recurring,
             'status': 'pending',
-            'next_run': time,
+            'next_run': next_run,  # Full datetime ISO
             'last_run': None,
             'attempts': 0,
             'created_at': datetime.now().isoformat()
@@ -109,22 +131,46 @@ class MessageScheduler:
         
         schedules.append(schedule)
         self._save_schedules_locked(schedules)
-        logger.info(f"Added message schedule for {contact} at {time}")
+        logger.info(f"Added message schedule for {contact} at {next_run}")
     
-    def add_poll_schedule(self, contact: str, question: str, options: List[str], time: str, recurring: Optional[str] = None, allow_multi_select: bool = False):
-        """Add a poll schedule with status tracking"""
+    def add_poll_schedule(self, contact: str, question: str, options: List[str], schedule_datetime: str, recurring: Optional[str] = None, allow_multi_select: bool = False):
+        """Add a poll schedule with status tracking
+        
+        Args:
+            contact: Phone number or group name
+            question: Poll question
+            options: List of poll options
+            schedule_datetime: Full datetime string (YYYY-MM-DDTHH:MM or ISO format)
+            recurring: None, 'daily', 'weekly', or 'monthly'
+            allow_multi_select: Whether to allow multiple option selection
+        """
         schedules = self._load_schedules_locked()
+        
+        # Parse the datetime - handle both 'YYYY-MM-DDTHH:MM' (from HTML) and ISO format
+        try:
+            if 'T' in schedule_datetime and len(schedule_datetime) == 16:
+                # HTML datetime-local format: 2025-12-14T19:30
+                dt = datetime.strptime(schedule_datetime, "%Y-%m-%dT%H:%M")
+            else:
+                # Try ISO format or fallback to just time
+                dt = datetime.fromisoformat(schedule_datetime) if '-' in schedule_datetime else None
+        except:
+            dt = None
+        
+        # Store as ISO format for full datetime support
+        next_run = dt.isoformat() if dt else schedule_datetime
+        time_only = dt.strftime("%H:%M") if dt else schedule_datetime
         
         schedule = {
             'type': 'poll',
             'contact': contact,
             'question': question,
             'options': options,
-            'time': time,
+            'time': time_only,  # Keep for display (HH:MM)
             'recurring': recurring,
             'allow_multi_select': allow_multi_select,
             'status': 'pending',
-            'next_run': time,
+            'next_run': next_run,  # Full datetime ISO
             'last_run': None,
             'attempts': 0,
             'created_at': datetime.now().isoformat()
@@ -132,7 +178,7 @@ class MessageScheduler:
         
         schedules.append(schedule)
         self._save_schedules_locked(schedules)
-        logger.info(f"Added poll schedule for {contact} at {time}")
+        logger.info(f"Added poll schedule for {contact} at {next_run}")
     
     def remove_schedule(self, index: int):
         """Remove a schedule by index"""
