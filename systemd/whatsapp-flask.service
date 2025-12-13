@@ -7,7 +7,8 @@ Requires=whatsapp-driver.service
 Type=simple
 User=iedwards
 WorkingDirectory=/home/iedwards/development/whatsapp_scheduler_openwa
-ExecStart=/usr/bin/python3 app.py
+Environment=PATH=/home/iedwards/development/whatsapp_scheduler_openwa/venv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/iedwards/development/whatsapp_scheduler_openwa/venv/bin/python app.py
 Restart=always
 RestartSec=10
 StandardOutput=journal
