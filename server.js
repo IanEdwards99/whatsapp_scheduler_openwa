@@ -81,6 +81,7 @@ async function saveQRCodeAsPNG(qrData) {
 async function initializeClient() {
   try {
     console.log('Initializing WhatsApp client...');
+    console.log('Working directory:', process.cwd());
     
     let qrReceived = false;
     
@@ -88,14 +89,15 @@ async function initializeClient() {
     wa.ev.on('qr.**', async (qrData, sessionId) => {
       console.log('🎯 QR EVENT RECEIVED!');
       qrCodeData = qrData;
+      qrReceived = true;
       
       // Save QR as PNG
       await saveQRCodeAsPNG(qrData);
       console.log('✅ QR code saved!');
-      console.log('   Access at: http://localhost:5001/qr_code.png');
+      console.log('   Access at: http://<your-ip>:5001/qr_code.png');
     });
     
-    // Create client
+    // Create client with qrCallback as fallback
     client = await wa.create({
       sessionId: 'whatsapp_scheduler',
       sessionDataPath: './',
@@ -111,6 +113,17 @@ async function initializeClient() {
       skipUpdateCheck: true,
       logConsole: false,
       killProcessOnBrowserClose: true,
+      
+      // Fallback QR callback in case ev.on doesn't fire
+      qrCallback: async (qrData) => {
+        console.log('📱 QR CALLBACK RECEIVED!');
+        if (!qrReceived) {
+          qrCodeData = qrData;
+          await saveQRCodeAsPNG(qrData);
+          console.log('✅ QR code saved via callback!');
+          console.log('   Access at: http://<your-ip>:5001/qr_code.png');
+        }
+      },
     });
 
     console.log('✅ Authentication successful!');
