@@ -68,6 +68,78 @@ def add_schedule():
     
     return render_template("add_schedule.html")
 
+
+@app.route("/edit/<int:index>", methods=["GET", "POST"])
+def edit_schedule(index):
+    schedules = scheduler.load_schedules()
+    
+    if index < 0 or index >= len(schedules):
+        flash("Invalid schedule index.", "error")
+        return redirect(url_for("index"))
+    
+    schedule = schedules[index]
+    
+    if request.method == "POST":
+        schedule_type = request.form.get("type")
+        contact = request.form.get("contact")
+        datetime_str = request.form.get("datetime")
+        recurring = request.form.get("recurring")
+        
+        if schedule_type == "message":
+            message = request.form.get("message")
+            if not contact or not message or not datetime_str:
+                flash("Please provide contact, message, and date/time.", "error")
+                return redirect(url_for("edit_schedule", index=index))
+            
+            scheduler.update_schedule(index, {
+                'type': 'message',
+                'contact': contact,
+                'message': message,
+                'datetime': datetime_str,
+                'recurring': recurring
+            })
+            flash("Schedule updated successfully!", "success")
+        
+        elif schedule_type == "poll":
+            question = request.form.get("question")
+            options = request.form.get("options").split(",")
+            options = [opt.strip() for opt in options if opt.strip()]
+            allow_multi_select = request.form.get("allow_multi_select") == "on"
+            
+            if not contact or not question or not options or not datetime_str:
+                flash("Please provide contact, question, options, and date/time.", "error")
+                return redirect(url_for("edit_schedule", index=index))
+            
+            if len(options) != len(set(options)):
+                flash("Poll options must be unique.", "error")
+                return redirect(url_for("edit_schedule", index=index))
+            
+            scheduler.update_schedule(index, {
+                'type': 'poll',
+                'contact': contact,
+                'question': question,
+                'options': options,
+                'datetime': datetime_str,
+                'recurring': recurring,
+                'allow_multi_select': allow_multi_select
+            })
+            flash("Schedule updated successfully!", "success")
+        
+        return redirect(url_for("index"))
+    
+    # GET request - show edit form with pre-filled data
+    # Convert next_run to datetime-local format for the input
+    next_run = schedule.get('next_run', '')
+    if 'T' in str(next_run):
+        datetime_value = next_run[:16]  # YYYY-MM-DDTHH:MM
+    else:
+        # If only time, use today's date
+        from datetime import datetime as dt
+        datetime_value = dt.now().strftime("%Y-%m-%d") + "T" + schedule.get('time', '00:00')
+    
+    return render_template("edit_schedule.html", schedule=schedule, index=index, datetime_value=datetime_value)
+
+
 @app.route("/delete/<int:index>")
 def delete_schedule(index):
     removed = scheduler.remove_schedule(index)

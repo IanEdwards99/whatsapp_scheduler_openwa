@@ -105,6 +105,7 @@
                                     </td>
                                     <td>{{ schedule.recurring or 'Once' }}</td>
                                     <td>
+                                        <a href="/edit/{{ loop.index0 }}" class="action-link edit-link">✏️ Edit</a>
                                         <a href="/delete/{{ loop.index0 }}" class="action-link delete-link">🗑️ Delete</a>
                                     </td>
                                 </tr>

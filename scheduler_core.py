@@ -180,6 +180,59 @@ class MessageScheduler:
         self._save_schedules_locked(schedules)
         logger.info(f"Added poll schedule for {contact} at {next_run}")
     
+    def update_schedule(self, index: int, data: dict):
+        """Update an existing schedule by index
+        
+        Args:
+            index: Schedule index to update
+            data: Dict with updated fields (type, contact, message/question, datetime, recurring, etc.)
+        """
+        schedules = self._load_schedules_locked()
+        
+        if 0 <= index < len(schedules):
+            schedule = schedules[index]
+            schedule_datetime = data.get('datetime', '')
+            
+            # Parse the datetime
+            try:
+                if 'T' in schedule_datetime and len(schedule_datetime) == 16:
+                    dt = datetime.strptime(schedule_datetime, "%Y-%m-%dT%H:%M")
+                else:
+                    dt = datetime.fromisoformat(schedule_datetime) if '-' in schedule_datetime else None
+            except:
+                dt = None
+            
+            next_run = dt.isoformat() if dt else schedule_datetime
+            time_only = dt.strftime("%H:%M") if dt else schedule_datetime
+            
+            # Update common fields
+            schedule['type'] = data.get('type', schedule['type'])
+            schedule['contact'] = data.get('contact', schedule['contact'])
+            schedule['time'] = time_only
+            schedule['recurring'] = data.get('recurring') or None
+            schedule['next_run'] = next_run
+            schedule['status'] = 'pending'  # Reset to pending after edit
+            schedule['attempts'] = 0
+            
+            # Update type-specific fields
+            if data.get('type') == 'message':
+                schedule['message'] = data.get('message', '')
+                # Remove poll fields if switching types
+                schedule.pop('question', None)
+                schedule.pop('options', None)
+                schedule.pop('allow_multi_select', None)
+            elif data.get('type') == 'poll':
+                schedule['question'] = data.get('question', '')
+                schedule['options'] = data.get('options', [])
+                schedule['allow_multi_select'] = data.get('allow_multi_select', False)
+                # Remove message field if switching types
+                schedule.pop('message', None)
+            
+            self._save_schedules_locked(schedules)
+            logger.info(f"Updated schedule {index}: {schedule['contact']} at {next_run}")
+            return schedule
+        return None
+    
     def remove_schedule(self, index: int):
         """Remove a schedule by index"""
         schedules = self._load_schedules_locked()
