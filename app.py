@@ -172,5 +172,9 @@ def api_status():
         "driver": "ok" if driver_ok else "down"
     })
 
+import os
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # Use debug mode only in development (set FLASK_DEBUG=1 to enable)
+    debug_mode = os.environ.get('FLASK_DEBUG', '0') == '1'
+    app.run(host="0.0.0.0", port=5000, debug=debug_mode)

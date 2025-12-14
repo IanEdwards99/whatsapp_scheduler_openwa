@@ -271,13 +271,15 @@ class MessageScheduler:
             return contact
         
         try:
-            response = requests.get(f"{self.driver_server_url}/get_groups", timeout=5)
+            response = requests.get(f"{self.driver_server_url}/get_groups", timeout=30)
             if response.status_code == 200:
                 groups = response.json().get('groups', [])
                 for group in groups:
                     if group['name'].lower() == contact.lower():
                         logger.info(f"Resolved '{contact}' to '{group['id']}'")
                         return group['id']
+        except requests.Timeout:
+            logger.warning(f"Timeout resolving group '{contact}' - driver may be slow or unresponsive")
         except Exception as e:
             logger.warning(f"Error resolving group: {e}")
         

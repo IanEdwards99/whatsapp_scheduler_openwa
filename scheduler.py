@@ -118,7 +118,7 @@ class MessageScheduler:
             # Fetch groups from driver and search for matching name (case-insensitive)
             response = requests.get(
                 f"{self.driver_server_url}/get_groups",
-                timeout=10
+                timeout=30
             )
             if response.status_code == 200:
                 data = response.json()
@@ -135,6 +135,9 @@ class MessageScheduler:
             else:
                 logger.warning(f"Failed to fetch groups: {response.text}. Using contact as-is.")
                 return contact
+        except requests.Timeout:
+            logger.warning(f"Timeout resolving group '{contact}' - driver may be slow or unresponsive")
+            return contact
         except Exception as e:
             logger.warning(f"Error resolving group name: {e}. Using contact as-is.")
             return contact

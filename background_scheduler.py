@@ -83,10 +83,17 @@ class EnhancedScheduleProcessor:
             bool: True if driver is ready, False otherwise
         """
         try:
-            response = requests.get(f"{self.driver_url}/status", timeout=2)
+            response = requests.get(f"{self.driver_url}/status", timeout=5)
             if response.status_code == 200:
                 data = response.json()
-                return data.get('ready', False)
+                ready = data.get('ready', False)
+                if not ready:
+                    logger.warning("Driver running but WhatsApp client not ready (may need re-authentication)")
+                return ready
+        except requests.Timeout:
+            logger.warning("Driver health check timed out - driver may be overloaded or crashed")
+        except requests.ConnectionError:
+            logger.warning("Cannot connect to driver - service may be down")
         except requests.RequestException as e:
             logger.debug(f"Driver health check failed: {e}")
         except Exception as e:
