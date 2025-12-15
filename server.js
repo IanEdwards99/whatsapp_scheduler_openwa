@@ -117,7 +117,7 @@ async function initializeClient() {
       headless: true,
       multiDevice: true,
       useChrome: true,
-      executablePath: '/usr/bin/chromium-browser',
+      executablePath: '/usr/bin/chromium',
       
       // Increased timeouts for Raspberry Pi / low-memory systems
       // 5 minutes for Puppeteer protocol calls (Pi is slow)

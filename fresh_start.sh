@@ -18,6 +18,8 @@ if systemctl is-active --quiet whatsapp-driver.service 2>/dev/null; then
     sudo timeout 10 systemctl stop whatsapp-flask.service 2>/dev/null || true
     sudo timeout 10 systemctl stop whatsapp-scheduler.service 2>/dev/null || true
     sudo timeout 10 systemctl stop whatsapp-driver.service 2>/dev/null || true
+    sudo timeout 10 systemctl stop whatsapp-maintenance.service 2>/dev/null || true
+    sudo timeout 10 systemctl stop whatsapp-maintenance.timer 2>/dev/null || true
     
     # If still running, force kill
     if systemctl is-active --quiet whatsapp-driver.service 2>/dev/null; then
