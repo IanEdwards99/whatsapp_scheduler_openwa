@@ -120,26 +120,11 @@ async function initializeClient() {
       executablePath: '/usr/bin/chromium-browser',
       
       // Increased timeouts for Raspberry Pi / low-memory systems
-      protocolTimeout: 120000,  // 2 minutes for Puppeteer protocol calls
+      // 5 minutes for Puppeteer protocol calls (Pi is slow)
+      protocolTimeout: 300000,
       
-      // Memory optimization flags for Chromium on Raspberry Pi
-      chromiumArgs: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',        // Use /tmp instead of /dev/shm (more memory)
-        '--disable-accelerated-2d-canvas', // Reduce GPU memory
-        '--disable-gpu',                   // No GPU needed for headless
-        '--disable-extensions',            // No extensions needed
-        '--disable-background-networking', // Reduce background network usage
-        '--disable-default-apps',
-        '--disable-sync',
-        '--disable-translate',
-        '--metrics-recording-only',
-        '--no-first-run',
-        '--mute-audio',
-        '--hide-scrollbars',
-        '--js-flags=--max-old-space-size=256',  // Limit Node.js heap to 256MB
-      ],
+      // Note: Don't use chromiumArgs with multiDevice - causes issues!
+      // The library handles the browser args automatically for MD mode.
       
       qrRefreshS: 60,
       qrTimeout: 0,
