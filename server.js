@@ -119,6 +119,28 @@ async function initializeClient() {
       useChrome: true,
       executablePath: '/usr/bin/chromium-browser',
       
+      // Increased timeouts for Raspberry Pi / low-memory systems
+      protocolTimeout: 120000,  // 2 minutes for Puppeteer protocol calls
+      
+      // Memory optimization flags for Chromium on Raspberry Pi
+      chromiumArgs: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',        // Use /tmp instead of /dev/shm (more memory)
+        '--disable-accelerated-2d-canvas', // Reduce GPU memory
+        '--disable-gpu',                   // No GPU needed for headless
+        '--disable-extensions',            // No extensions needed
+        '--disable-background-networking', // Reduce background network usage
+        '--disable-default-apps',
+        '--disable-sync',
+        '--disable-translate',
+        '--metrics-recording-only',
+        '--no-first-run',
+        '--mute-audio',
+        '--hide-scrollbars',
+        '--js-flags=--max-old-space-size=256',  // Limit Node.js heap to 256MB
+      ],
+      
       qrRefreshS: 60,
       qrTimeout: 0,
       authTimeout: 0,
@@ -165,9 +187,11 @@ async function initializeClient() {
 
     console.log('✅ Authentication successful!');
 
-    client.onMessage(msg => {
-      console.log(`Message received from ${msg.from}: ${msg.body}`);
-    });
+    // Disabled incoming message logging to save memory/journal space
+    // Uncomment if you need to debug incoming messages:
+    // client.onMessage(msg => {
+    //   console.log(`Message received from ${msg.from}: ${msg.body}`);
+    // });
 
     clientReady = true;
     console.log('✅ WhatsApp client initialized successfully!');

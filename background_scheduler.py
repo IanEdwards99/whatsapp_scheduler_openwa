@@ -18,6 +18,8 @@ Key Features:
 - History logging: tracks every send with metadata
 - Error recovery: marks failed sends, continues processing
 - Driver health check: verifies driver ready before sending
+- Auto-restart: restarts driver service after consecutive failures
+- Email alerts: notifies on failures and restarts
 
 Usage:
     python3 background_scheduler.py
@@ -28,9 +30,11 @@ Or as systemd service for production deployment.
 import time
 import requests
 import logging
+import subprocess
 from datetime import datetime
 from scheduler_core import MessageScheduler
 from message_history import MessageHistory
+from email_notifications import get_notifier
 
 # Configure logging
 logging.basicConfig(
@@ -43,6 +47,8 @@ logger = logging.getLogger(__name__)
 SCHEDULE_FILE = "schedules/schedule.json"
 DRIVER_SERVER_URL = "http://127.0.0.1:5001"
 CHECK_INTERVAL = 10  # Check every 10 seconds for pending schedules
+MAX_CONSECUTIVE_FAILURES = 3  # Restart driver after this many failures
+DRIVER_RESTART_COOLDOWN = 300  # Wait 5 minutes between restart attempts
 
 
 class EnhancedScheduleProcessor:
@@ -69,6 +75,62 @@ class EnhancedScheduleProcessor:
         self.scheduler = MessageScheduler(schedule_file)
         self.driver_url = driver_url
         self.history = MessageHistory()  # Message history tracker
+        self.consecutive_failures = 0  # Track failures for auto-restart
+        self.last_restart_time = 0  # Track last restart to avoid restart loops
+    
+    def restart_driver(self) -> bool:
+        """
+        Attempt to restart the WhatsApp driver service via systemctl
+        
+        Returns:
+            bool: True if restart command succeeded, False otherwise
+        """
+        current_time = time.time()
+        
+        # Check cooldown period
+        if current_time - self.last_restart_time < DRIVER_RESTART_COOLDOWN:
+            remaining = int(DRIVER_RESTART_COOLDOWN - (current_time - self.last_restart_time))
+            logger.warning(f"Driver restart cooldown active ({remaining}s remaining)")
+            return False
+        
+        logger.warning("⚠️ Attempting to restart whatsapp-driver service...")
+        
+        # Send email notification about restart
+        get_notifier().send_driver_restart_alert(
+            f"{self.consecutive_failures} consecutive failures detected"
+        )
+        
+        try:
+            # Use systemctl to restart the driver
+            result = subprocess.run(
+                ['sudo', 'systemctl', 'restart', 'whatsapp-driver'],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode == 0:
+                logger.info("✓ Driver service restart initiated")
+                self.last_restart_time = current_time
+                self.consecutive_failures = 0
+                
+                # Wait for driver to come back up
+                logger.info("Waiting 60 seconds for driver to initialize...")
+                time.sleep(60)
+                return True
+            else:
+                logger.error(f"✗ Failed to restart driver: {result.stderr}")
+                get_notifier().send_critical_error_alert(f"Failed to restart driver: {result.stderr}")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            logger.error("✗ Driver restart command timed out")
+            get_notifier().send_critical_error_alert("Driver restart command timed out")
+            return False
+        except Exception as e:
+            logger.error(f"✗ Error restarting driver: {e}")
+            get_notifier().send_critical_error_alert(f"Error restarting driver: {e}")
+            return False
     
     def check_driver_ready(self) -> bool:
         """
@@ -79,6 +141,8 @@ class EnhancedScheduleProcessor:
         - WhatsApp client is initialized
         - Session is authenticated
         
+        Tracks consecutive failures and triggers auto-restart if needed.
+        
         Returns:
             bool: True if driver is ready, False otherwise
         """
@@ -87,9 +151,15 @@ class EnhancedScheduleProcessor:
             if response.status_code == 200:
                 data = response.json()
                 ready = data.get('ready', False)
-                if not ready:
+                if ready:
+                    # Reset failure counter on success
+                    if self.consecutive_failures > 0:
+                        logger.info(f"Driver recovered after {self.consecutive_failures} failures")
+                    self.consecutive_failures = 0
+                    return True
+                else:
                     logger.warning("Driver running but WhatsApp client not ready (may need re-authentication)")
-                return ready
+                    return False
         except requests.Timeout:
             logger.warning("Driver health check timed out - driver may be overloaded or crashed")
         except requests.ConnectionError:
@@ -98,6 +168,15 @@ class EnhancedScheduleProcessor:
             logger.debug(f"Driver health check failed: {e}")
         except Exception as e:
             logger.error(f"Unexpected error in health check: {e}")
+        
+        # Track failure and potentially restart
+        self.consecutive_failures += 1
+        logger.warning(f"Driver failure count: {self.consecutive_failures}/{MAX_CONSECUTIVE_FAILURES}")
+        
+        if self.consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+            logger.error(f"⚠️ {MAX_CONSECUTIVE_FAILURES} consecutive driver failures - triggering restart")
+            self.restart_driver()
+        
         return False
     
     def process_schedules(self):
@@ -168,6 +247,14 @@ class EnhancedScheduleProcessor:
                 # Send via driver API
                 success = self.scheduler.send_message_via_api(contact, message)
                 
+                # Send email alert on failure
+                if not success:
+                    get_notifier().send_failure_alert(
+                        contact=contact,
+                        content_type='message',
+                        error=f"Failed to send message: {message[:100]}..."
+                    )
+                
                 # Log to message history with metadata
                 self.history.add_entry(
                     entry_type='message',
@@ -192,6 +279,14 @@ class EnhancedScheduleProcessor:
                 
                 # Send via driver API
                 success = self.scheduler.send_poll_via_api(contact, question, options, allow_multi_select)
+                
+                # Send email alert on failure
+                if not success:
+                    get_notifier().send_failure_alert(
+                        contact=contact,
+                        content_type='poll',
+                        error=f"Failed to send poll: {question}"
+                    )
                 
                 # Log to message history with metadata
                 self.history.add_entry(

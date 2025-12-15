@@ -9,6 +9,12 @@ WorkingDirectory=/home/iedwards/development/whatsapp_scheduler_openwa
 ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=10
+
+# Auto-restart if memory usage gets too high (Chromium leak protection)
+# Pi has ~1GB RAM, limit Chromium to 700MB before restart
+MemoryMax=700M
+MemoryHigh=600M
+
 StandardOutput=journal
 StandardError=journal
 
