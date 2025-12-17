@@ -120,19 +120,14 @@ async function initializeClient() {
       executablePath: '/usr/bin/chromium',
       
       // Increased timeouts for Raspberry Pi / low-memory systems
-      // 5 minutes for Puppeteer protocol calls (Pi is slow)
-      protocolTimeout: 300000,
+      // 10 minutes for Puppeteer protocol calls (Pi is very slow with many contacts)
+      protocolTimeout: 600000,
       
       // Note: Don't use chromiumArgs with multiDevice - causes issues!
       // The library handles the browser args automatically for MD mode.
       
-      // CRITICAL for slow Pi: wait for session to fully sync before validation
-      waitForRipeSession: true,
-      waitForRipeSessionTimeout: 300,  // 5 minutes to wait for sync
-      
-      // Be more lenient with session validation
-      safeMode: true,  // Slower but safer for low-resource devices
-      skipBrokenMethodsCheck: true,  // Skip method validation that can fail on slow load
+      // Don't wait for full sync - let it happen in background
+      // (waitForRipeSession causes infinite hang with 3000+ contacts on Pi)
       
       qrRefreshS: 60,
       qrTimeout: 0,
