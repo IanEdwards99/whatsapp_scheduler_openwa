@@ -126,6 +126,14 @@ async function initializeClient() {
       // Note: Don't use chromiumArgs with multiDevice - causes issues!
       // The library handles the browser args automatically for MD mode.
       
+      // CRITICAL for slow Pi: wait for session to fully sync before validation
+      waitForRipeSession: true,
+      waitForRipeSessionTimeout: 300,  // 5 minutes to wait for sync
+      
+      // Be more lenient with session validation
+      safeMode: true,  // Slower but safer for low-resource devices
+      skipBrokenMethodsCheck: true,  // Skip method validation that can fail on slow load
+      
       qrRefreshS: 60,
       qrTimeout: 0,
       authTimeout: 0,
