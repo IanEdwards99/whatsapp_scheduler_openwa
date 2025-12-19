@@ -412,7 +412,7 @@ app.post('/send_poll', async (req, res) => {
 
 // Start Express server and initialize WhatsApp client
 const PORT = 5001;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`WhatsApp Driver API server running on port ${PORT}`);
   console.log('Available endpoints:');
   console.log('  GET  /status            - Health check');
@@ -430,3 +430,37 @@ app.listen(PORT, () => {
     console.error('Server will continue running but won\'t be able to send messages');
   });
 });
+
+/**
+ * Graceful shutdown handler
+ * 
+ * Properly closes WhatsApp client and browser on SIGTERM/SIGINT.
+ * Prevents corrupted session data from hard kills.
+ */
+async function gracefulShutdown(signal) {
+  console.log(`\n${signal} received. Shutting down gracefully...`);
+  
+  try {
+    // Close Express server first (stop accepting new requests)
+    server.close(() => {
+      console.log('HTTP server closed');
+    });
+    
+    // Close WhatsApp client and browser
+    if (client) {
+      console.log('Closing WhatsApp client...');
+      await client.kill();
+      console.log('WhatsApp client closed');
+    }
+    
+    console.log('Graceful shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+}
+
+// Handle shutdown signals from systemd
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

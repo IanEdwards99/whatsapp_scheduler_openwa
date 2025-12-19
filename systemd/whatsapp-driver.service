@@ -12,7 +12,7 @@ RestartSec=10
 
 # Give Chromium/puppeteer more time to shut down gracefully
 # Default 90s is not enough; prevents SIGKILL which corrupts session
-TimeoutStopSec=420
+TimeoutStopSec=300
 
 # Auto-restart if memory usage gets too high (Chromium leak protection)
 # Pi has ~1GB RAM, limit Chromium to 700MB before restart
