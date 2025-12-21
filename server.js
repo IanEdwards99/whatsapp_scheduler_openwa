@@ -19,6 +19,47 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import QRCode from 'qrcode';
 import fs from 'fs';
+import nodemailer from 'nodemailer';
+import dotenv from 'dotenv';
+dotenv.config();
+// Email notification setup
+const emailUser = process.env.EMAIL_USER;
+const emailPass = process.env.EMAIL_PASS;
+const emailTo = process.env.EMAIL_TO;
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: emailUser,
+    pass: emailPass,
+  },
+});
+
+async function sendQrEmail(qrPath) {
+  if (!emailUser || !emailPass || !emailTo) {
+    console.log('Email credentials not set. Skipping QR email notification.');
+    return;
+  }
+  try {
+    const mailOptions = {
+      from: emailUser,
+      to: emailTo,
+      subject: 'WhatsApp Scheduler: Authentication Required',
+      text: 'WhatsApp Scheduler requires authentication. Scan the attached QR code to log in.',
+      html: '<p>WhatsApp Scheduler requires authentication.<br>Scan the attached QR code to log in.</p>',
+      attachments: [
+        {
+          filename: 'qr_code.png',
+          path: qrPath,
+        },
+      ],
+    };
+    await transporter.sendMail(mailOptions);
+    console.log('QR code email sent to', emailTo);
+  } catch (err) {
+    console.error('Failed to send QR code email:', err);
+  }
+}
 
 const app = express();
 app.use(bodyParser.json());
@@ -41,17 +82,15 @@ let pageRef = null;          // Store page reference for screenshots
  */
 async function saveQRCodeAsPNG(qrData) {
   try {
-    // QR data from open-wa is already a base64 encoded PNG image
-    // Format: "data:image/png;base64,iVBORw0KGgo..."
+    let saved = false;
     if (qrData.startsWith('data:image')) {
-      // Extract the base64 part after the comma
       const base64Data = qrData.split(',')[1];
       const buffer = Buffer.from(base64Data, 'base64');
       fs.writeFileSync('qr_code.png', buffer);
+      saved = true;
       console.log('QR code saved as qr_code.png');
       console.log('Access it at: http://localhost:5001/qr_code.png');
     } else {
-      // Fallback: try to generate QR from raw data
       await QRCode.toFile('qr_code.png', qrData, {
         width: 512,
         margin: 2,
@@ -60,7 +99,11 @@ async function saveQRCodeAsPNG(qrData) {
           light: '#ffffff'
         }
       });
+      saved = true;
       console.log('QR code saved as qr_code.png');
+    }
+    if (saved) {
+      await sendQrEmail('qr_code.png');
     }
   } catch (error) {
     console.error('Error saving QR code as PNG:', error);
@@ -82,22 +125,22 @@ async function initializeClient() {
   try {
     console.log('Initializing WhatsApp client...');
     console.log('Working directory:', process.cwd());
-    
+
     let qrReceived = false;
     let screenshotInterval = null;
-    
+
     // Use ev (event) mode to get page access before authentication completes
     wa.ev.on('qr.**', async (qrData, sessionId) => {
       console.log('🎯 QR EVENT RECEIVED!');
       qrCodeData = qrData;
       qrReceived = true;
-      
+
       // Save QR as PNG
       await saveQRCodeAsPNG(qrData);
       console.log('✅ QR code saved!');
       console.log('   Access at: http://<your-ip>:5001/qr_code.png');
     });
-    
+
     // Also listen for page events to take screenshots as fallback
     wa.ev.on('PAGE.**', async (page) => {
       console.log('📄 PAGE EVENT - Taking screenshot...');
@@ -109,26 +152,34 @@ async function initializeClient() {
         console.log('Screenshot error:', e.message);
       }
     });
-    
+
     // Create client with qrCallback as fallback
     client = await wa.create({
       sessionId: 'whatsapp_scheduler',
       sessionDataPath: './',
       headless: true,
-      multiDevice: true,
       useChrome: true,
       executablePath: '/usr/bin/chromium',
-      
+
+      // RPi Optimization: Block assets to save RAM
+      blockAssets: true,
+
       // Increased timeouts for Raspberry Pi / low-memory systems
       // 10 minutes for Puppeteer protocol calls (Pi is very slow with many contacts)
       protocolTimeout: 600000,
-      
-      // Note: Don't use chromiumArgs with multiDevice - causes issues!
-      // The library handles the browser args automatically for MD mode.
-      
+
+      // RPi Optimization: Chromium flags for low-memory environment
+      chromiumArgs: [
+        '--no-zygote',                     // Saves memory by spawning fewer processes
+        '--disable-dev-shm-usage',         // Use disk instead of small shared memory
+        '--disable-accelerated-2d-canvas', // Disable GPU acceleration for canvas
+        '--disable-gpu',                   // Disable GPU hardware acceleration
+        '--no-first-run'
+      ],
+
       // Don't wait for full sync - let it happen in background
       // (waitForRipeSession causes infinite hang with 3000+ contacts on Pi)
-      
+
       qrRefreshS: 60,
       qrTimeout: 0,
       authTimeout: 0,
@@ -137,7 +188,7 @@ async function initializeClient() {
       logConsole: false,
       logQR: true,  // Enable QR logging to console
       killProcessOnBrowserClose: true,
-      
+
       // Fallback QR callback in case ev.on doesn't fire
       qrCallback: async (qrData) => {
         console.log('📱 QR CALLBACK RECEIVED!');
@@ -148,7 +199,7 @@ async function initializeClient() {
           console.log('   Access at: http://<your-ip>:5001/qr_code.png');
         }
       },
-      
+
       // Get page reference for screenshots
       onPageCreated: async (page) => {
         console.log('📄 PAGE CREATED - Starting screenshot timer...');
@@ -183,7 +234,7 @@ async function initializeClient() {
 
     clientReady = true;
     console.log('✅ WhatsApp client initialized successfully!');
-    
+
     if (qrCodeData && fs.existsSync('qr_code.png')) {
       fs.unlinkSync('qr_code.png');
       console.log('QR code PNG deleted (authentication successful)');
@@ -223,9 +274,9 @@ app.get('/qr_code.png', (req, res) => {
   if (fs.existsSync('qr_code.png')) {
     res.sendFile('qr_code.png', { root: '.' });
   } else {
-    res.status(404).json({ 
-      status: 'error', 
-      message: 'QR code not available (either not generated yet or already authenticated)' 
+    res.status(404).json({
+      status: 'error',
+      message: 'QR code not available (either not generated yet or already authenticated)'
     });
   }
 });
@@ -243,9 +294,9 @@ app.get('/qr_screenshot.png', (req, res) => {
   if (fs.existsSync('qr_screenshot.png')) {
     res.sendFile('qr_screenshot.png', { root: '.' });
   } else {
-    res.status(404).json({ 
-      status: 'error', 
-      message: 'Screenshot not available' 
+    res.status(404).json({
+      status: 'error',
+      message: 'Screenshot not available'
     });
   }
 });
@@ -324,10 +375,10 @@ app.post('/send_message', async (req, res) => {
   try {
     // Convert contact to WhatsApp chat ID format
     // If already a JID (contains @), use as-is; otherwise format as phone number
-    const chatId = contact.includes('@') 
-      ? contact 
+    const chatId = contact.includes('@')
+      ? contact
       : `${contact.replace(/[^\d]/g, '')}@c.us`;
-    
+
     await client.sendText(chatId, message);
     res.json({ status: 'ok' });
   } catch (error) {
@@ -368,8 +419,8 @@ app.post('/send_poll', async (req, res) => {
 
   try {
     // Determine chat ID: if contact contains @, it's already a JID; otherwise format as phone
-    const chatId = contact.includes('@') 
-      ? contact 
+    const chatId = contact.includes('@')
+      ? contact
       : `${contact.replace(/[^\d]/g, '')}@c.us`;
 
     // STRATEGY 1: Native poll for groups
@@ -384,7 +435,7 @@ app.post('/send_poll', async (req, res) => {
     // WhatsApp buttons limited to 3 buttons maximum
     if (options.length <= 3) {
       // Button format: { id: string, text: string }
-      const buttons = options.map((opt, i) => ({ 
+      const buttons = options.map((opt, i) => ({
         id: `opt${i + 1}`,  // Unique button ID
         text: opt           // Button label
       }));
@@ -395,7 +446,7 @@ app.post('/send_poll', async (req, res) => {
 
     // STRATEGY 3: List message for >3 options in private chats
     // List messages allow selection from dropdown menu
-    const rows = options.map((opt, i) => ({ 
+    const rows = options.map((opt, i) => ({
       rowId: `opt${i + 1}`,   // Unique row identifier
       title: opt              // Option text
     }));
@@ -403,7 +454,7 @@ app.post('/send_poll', async (req, res) => {
     // sendListMessage(to, sections, title, description, actionText)
     await client.sendListMessage(chatId, sections, 'Poll', question, 'Choose an option');
     return res.json({ status: 'ok', method: 'list' });
-    
+
   } catch (error) {
     console.error('Error sending poll:', error);
     res.status(500).json({ status: 'error', message: error.message });
@@ -421,7 +472,7 @@ const server = app.listen(PORT, () => {
   console.log('  GET  /get_groups        - List all groups');
   console.log('  POST /send_message      - Send text message');
   console.log('  POST /send_poll         - Send poll (native/buttons/list)');
-  
+
   // Initialize WhatsApp client asynchronously (non-blocking)
   // First run will show QR code in console for phone scanning
   // Subsequent runs reuse session from whatsapp_scheduler.data.json
@@ -439,20 +490,20 @@ const server = app.listen(PORT, () => {
  */
 async function gracefulShutdown(signal) {
   console.log(`\n${signal} received. Shutting down gracefully...`);
-  
+
   try {
     // Close Express server first (stop accepting new requests)
     server.close(() => {
       console.log('HTTP server closed');
     });
-    
+
     // Close WhatsApp client and browser
     if (client) {
       console.log('Closing WhatsApp client...');
       await client.kill();
       console.log('WhatsApp client closed');
     }
-    
+
     console.log('Graceful shutdown complete');
     process.exit(0);
   } catch (error) {

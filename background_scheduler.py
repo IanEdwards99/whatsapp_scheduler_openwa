@@ -46,9 +46,9 @@ logger = logging.getLogger(__name__)
 # Configuration
 SCHEDULE_FILE = "schedules/schedule.json"
 DRIVER_SERVER_URL = "http://127.0.0.1:5001"
-CHECK_INTERVAL = 10  # Check every 10 seconds for pending schedules
-MAX_CONSECUTIVE_FAILURES = 3  # Restart driver after this many failures
-DRIVER_RESTART_COOLDOWN = 300  # Wait 5 minutes between restart attempts
+CHECK_INTERVAL = 30  # Check every 30 seconds for pending schedules (reduced for Pi)
+MAX_CONSECUTIVE_FAILURES = 20  # Restart driver after ~10 minutes of failures
+DRIVER_RESTART_COOLDOWN = 900  # Wait 15 minutes between restart attempts
 
 
 class EnhancedScheduleProcessor:
@@ -147,7 +147,8 @@ class EnhancedScheduleProcessor:
             bool: True if driver is ready, False otherwise
         """
         try:
-            response = requests.get(f"{self.driver_url}/status", timeout=5)
+            # Increase timeout for Pi (slow response during heavy load)
+            response = requests.get(f"{self.driver_url}/status", timeout=30)
             if response.status_code == 200:
                 data = response.json()
                 ready = data.get('ready', False)
