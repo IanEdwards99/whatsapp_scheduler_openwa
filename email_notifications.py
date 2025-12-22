@@ -32,6 +32,10 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 from typing import Optional
+from dotenv import load_dotenv
+
+# Load .env file
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +44,9 @@ logger = logging.getLogger(__name__)
 EMAIL_CONFIG = {
     'smtp_server': 'smtp.gmail.com',
     'smtp_port': 587,
-    'sender_email': os.environ.get('EMAIL_SENDER', ''),
-    'sender_password': os.environ.get('EMAIL_PASSWORD', ''),
-    'recipient_email': os.environ.get('EMAIL_RECIPIENT', ''),
+    'sender_email': os.environ.get('EMAIL_USER', ''),
+    'sender_password': os.environ.get('EMAIL_PASS', ''),
+    'recipient_email': os.environ.get('EMAIL_TO', ''),
     'subject_prefix': 'RPI-3B+ Home Server',  # Custom subject prefix
     'enabled': True,
 }

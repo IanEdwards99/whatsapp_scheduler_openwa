@@ -39,19 +39,17 @@ sleep 2
 echo "Clearing WhatsApp session data..."
 rm -f whatsapp_scheduler.data.json
 rm -f qr_code.png
+rm -f qr_screenshot.png
 echo "Session data cleared"
 echo ""
 
-# Optionally clear browser cache (more thorough reset)
-read -p "Clear browser cache too? (y/N): " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]
-then
-    echo "Clearing browser cache..."
+# Always clear browser cache for a true fresh start
+echo "Clearing ALL internal browser data (cache/cookies)..."
+if [ -d "_IGNORE_whatsapp_scheduler" ]; then
     rm -rf _IGNORE_whatsapp_scheduler/
     echo "Browser cache cleared"
 fi
 
 echo ""
 echo "Fresh start complete! You can now run ./start_all.sh"
-echo "A new QR code will be generated at http://localhost:5001/qr_code.png"
+echo "A new QR code will be generated at http://<pi-ip>:5001/qr_code.png"
