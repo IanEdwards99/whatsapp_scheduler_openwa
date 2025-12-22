@@ -17,6 +17,11 @@
 import wa from '@open-wa/wa-automate';
 import express from 'express';
 import bodyParser from 'body-parser';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import QRCode from 'qrcode';
 import fs from 'fs';
 import nodemailer from 'nodemailer';
@@ -155,8 +160,7 @@ async function initializeClient() {
 
     // Create client with qrCallback as fallback
     client = await wa.create({
-      sessionId: 'whatsapp_scheduler',
-      sessionDataPath: './',
+      userDataDir: path.join(__dirname, 'whatsapp_session_store'),
       headless: true,
       useChrome: true,
       executablePath: '/usr/bin/chromium',
@@ -229,6 +233,8 @@ async function initializeClient() {
     }
 
     console.log('✅ Authentication successful!');
+
+
 
     // Disabled incoming message logging to save memory/journal space
     // Uncomment if you need to debug incoming messages:
