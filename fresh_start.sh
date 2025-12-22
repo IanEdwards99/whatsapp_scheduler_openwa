@@ -47,7 +47,10 @@ echo ""
 echo "Clearing ALL internal browser data (cache/cookies)..."
 if [ -d "_IGNORE_whatsapp_scheduler" ]; then
     rm -rf _IGNORE_whatsapp_scheduler/
-    echo "Browser cache cleared"
+fi
+if [ -d "whatsapp_session_store" ]; then
+    rm -rf whatsapp_session_store/
+    echo "Persistent session store cleared"
 fi
 
 echo ""
