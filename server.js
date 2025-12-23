@@ -166,7 +166,8 @@ async function initializeClient() {
       executablePath: '/usr/bin/chromium',
 
       // RPi Optimization: Block assets to save RAM
-      blockAssets: true,
+      // DISABLED for debugging - sometimes blocks auth scripts
+      blockAssets: false,
 
       // Increased timeouts for Raspberry Pi / low-memory systems
       // 10 minutes for Puppeteer protocol calls (Pi is very slow with many contacts)
@@ -193,7 +194,7 @@ async function initializeClient() {
       authTimeout: 0,
       disableSpins: true,
       skipUpdateCheck: true,
-      logConsole: false,
+      logConsole: true, // Enable console logging to debug auth hang
       logQR: true,  // Enable QR logging to console
       killProcessOnBrowserClose: true,
 
