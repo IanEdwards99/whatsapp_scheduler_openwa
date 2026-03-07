@@ -18,4 +18,7 @@ whatsapp_scheduler_MULTI_DEVICE.data.json
 *.data.json
 # QR code PNG (temporary authentication file)
 qr_code.png
+qr_screenshot.png
+# Persistent browser session store (contains auth tokens - never commit!)
+whatsapp_session_store/
 *.env

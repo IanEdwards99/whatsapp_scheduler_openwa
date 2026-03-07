@@ -24,9 +24,45 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import QRCode from 'qrcode';
 import fs from 'fs';
+import { execSync } from 'child_process';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 dotenv.config();
+
+/**
+ * Detect the correct Chromium executable path at runtime.
+ * Supports both development (Ubuntu/Debian) and RPi environments.
+ */
+function findChromiumPath() {
+  const candidates = [
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/snap/bin/chromium',
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  // Fallback: let open-wa find it via bundled Chromium
+  console.warn('⚠️  No system Chromium found, relying on bundled browser');
+  return undefined;
+}
+
+const chromiumPath = findChromiumPath();
+console.log(`Detected Chromium path: ${chromiumPath || '(bundled)'}`);
+
+/**
+ * Wrapper function to restart the WhatsApp client.
+ * Passed to open-wa's `restartOnCrash` so that if the browser
+ * process dies, the client is re-initialised automatically.
+ */
+function start() {
+  console.log('🔄 Restarting WhatsApp client (crash recovery)...');
+  initializeClient().catch(err => {
+    console.error('Failed to restart WhatsApp client after crash:', err);
+  });
+}
 // Email notification setup
 const emailUser = process.env.EMAIL_USER;
 const emailPass = process.env.EMAIL_PASS;
@@ -74,6 +110,7 @@ let client = null;           // WhatsApp client instance
 let clientReady = false;     // Connection readiness flag
 let qrCodeData = null;       // Store QR code data for PNG export
 let pageRef = null;          // Store page reference for screenshots
+let qrEmailSent = false;     // Prevent sending multiple QR emails per auth attempt
 
 /**
  * Save QR code as PNG file
@@ -107,7 +144,10 @@ async function saveQRCodeAsPNG(qrData) {
       saved = true;
       console.log('QR code saved as qr_code.png');
     }
-    if (saved) {
+    // Only send the email ONCE per authentication attempt.
+    // The QR refreshes every 60s but we don't need to spam the inbox.
+    if (saved && !qrEmailSent) {
+      qrEmailSent = true;
       await sendQrEmail('qr_code.png');
     }
   } catch (error) {
@@ -130,9 +170,12 @@ async function initializeClient() {
   try {
     console.log('Initializing WhatsApp client...');
     console.log('Working directory:', process.cwd());
+    const sessionStorePath = path.join(__dirname, 'whatsapp_session_store');
+    console.log('Session store path:', sessionStorePath);
 
     let qrReceived = false;
     let screenshotInterval = null;
+    qrEmailSent = false;  // Reset email flag for this auth attempt
 
     // Use ev (event) mode to get page access before authentication completes
     wa.ev.on('qr.**', async (qrData, sessionId) => {
@@ -160,10 +203,16 @@ async function initializeClient() {
 
     // Create client with qrCallback as fallback
     client = await wa.create({
-      userDataDir: path.join(__dirname, 'whatsapp_session_store'),
+      userDataDir: sessionStorePath,
       headless: true,
-      useChrome: true,
-      executablePath: '/usr/bin/chromium',
+      useChrome: !!chromiumPath,
+      ...(chromiumPath ? { executablePath: chromiumPath } : {}),
+
+      // Explicitly set sessionId to ensure consistent file naming
+      sessionId: 'whatsapp_scheduler',
+
+      // Auto-restart if the client crashes relative to the node process
+      restartOnCrash: start,
 
       // RPi Optimization: Block assets to save RAM
       // DISABLED for debugging - sometimes blocks auth scripts
@@ -174,17 +223,13 @@ async function initializeClient() {
       protocolTimeout: 600000,
 
       // RPi Optimization: Chromium flags for low-memory environment
-      // NOTE: Disabled these because they conflict with Multi-Device mode and cause session invalidation
-      /*
+      // Re-enabling some safe ones to help with stability
       chromiumArgs: [
         '--no-zygote',                     // Saves memory by spawning fewer processes
         '--disable-dev-shm-usage',         // Use disk instead of small shared memory
-        '--disable-accelerated-2d-canvas', // Disable GPU acceleration for canvas
-        '--disable-gpu',                   // Disable GPU hardware acceleration
-        // FIX for "Try again later": Use a real desktop User-Agent to prevent WhatsApp blocking headless
-        '--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'
+        // '--disable-accelerated-2d-canvas', // Keep these commented if they cause issues
+        // '--disable-gpu',
       ],
-      */
 
       // Don't wait for full sync - let it happen in background
       // (waitForRipeSession causes infinite hang with 3000+ contacts on Pi)
