@@ -31,10 +31,14 @@ import time
 import requests
 import logging
 import subprocess
+import os
 from datetime import datetime
+from dotenv import load_dotenv
 from scheduler_core import MessageScheduler
 from message_history import MessageHistory
 from email_notifications import get_notifier
+
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -45,7 +49,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 SCHEDULE_FILE = "schedules/schedule.json"
-DRIVER_SERVER_URL = "http://127.0.0.1:5001"
+DRIVER_SERVER_URL = os.environ.get("DRIVER_URL", "http://127.0.0.1:5001")
 CHECK_INTERVAL = 30  # Check every 30 seconds for pending schedules (reduced for Pi)
 MAX_CONSECUTIVE_FAILURES = 20  # Restart driver after ~10 minutes of failures
 DRIVER_RESTART_COOLDOWN = 900  # Wait 15 minutes between restart attempts

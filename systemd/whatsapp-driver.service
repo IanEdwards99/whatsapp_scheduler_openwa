@@ -8,16 +8,23 @@ User=iedwards
 WorkingDirectory=/home/iedwards/development/whatsapp_scheduler_openwa
 ExecStart=/usr/bin/node server.js
 Restart=always
-RestartSec=10
+RestartSec=30
 
 # Give Chromium/puppeteer more time to shut down gracefully
 # Default 90s is not enough; prevents SIGKILL which corrupts session
 TimeoutStopSec=300
 
+# Give the RPi 3B+ plenty of time to start up (Chromium + WhatsApp can take 2-3 min)
+TimeoutStartSec=600
+
 # Auto-restart if memory usage gets too high (Chromium leak protection)
 # Pi has ~1GB RAM, limit Chromium to 700MB before restart
 MemoryMax=700M
 MemoryHigh=600M
+
+# Limit restart bursts: max 5 restarts in 10 minutes
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 StandardOutput=journal
 StandardError=journal

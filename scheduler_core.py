@@ -6,6 +6,7 @@ from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 from pathlib import Path
 from contextlib import contextmanager
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ class MessageScheduler:
     
     def __init__(self, schedule_file: str):
         self.schedule_file = schedule_file
-        self.driver_server_url = "http://127.0.0.1:5001"
+        self.driver_server_url = os.environ.get("DRIVER_URL", "http://127.0.0.1:5001")
         
         # Ensure schedule file exists
         Path(schedule_file).parent.mkdir(parents=True, exist_ok=True)

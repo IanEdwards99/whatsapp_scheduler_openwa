@@ -6,13 +6,15 @@ from requests.exceptions import RequestException
 import subprocess
 import os
 import time
+from dotenv import load_dotenv
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key_change_in_production"
 scheduler = MessageScheduler("schedules/schedule.json")
 history = MessageHistory()  # Add history tracking
 
-DRIVER_SERVER_URL = "http://127.0.0.1:5001"
+DRIVER_SERVER_URL = os.environ.get("DRIVER_URL", "http://127.0.0.1:5001")
 
 
 def ensure_driver_server():
