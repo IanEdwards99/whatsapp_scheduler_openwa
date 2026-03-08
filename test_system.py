@@ -54,12 +54,12 @@ def test_send_message():
     scheduler = MessageScheduler("schedules/schedule.json")
     
     message = f"Test message from WhatsApp Scheduler - {time.strftime('%H:%M:%S')}"
-    success = scheduler.send_message_via_api(TEST_CONTACT, message)
+    success, error_detail = scheduler.send_message_via_api(TEST_CONTACT, message)
     
     if success:
         print("✓ Message sent successfully!")
     else:
-        print("✗ Message failed")
+        print(f"✗ Message failed: {error_detail}")
     
     return success
 
@@ -69,12 +69,12 @@ def test_send_group_message(group_jid):
     scheduler = MessageScheduler("schedules/schedule.json")
     
     message = f"Test group message from WhatsApp Scheduler - {time.strftime('%H:%M:%S')}"
-    success = scheduler.send_message_via_api(group_jid, message)
+    success, error_detail = scheduler.send_message_via_api(group_jid, message)
     
     if success:
         print("✓ Group message sent successfully!")
     else:
-        print("✗ Group message failed")
+        print(f"✗ Group message failed: {error_detail}")
     
     return success
 
@@ -85,12 +85,12 @@ def test_send_poll(group_jid):
     
     question = "Which option do you prefer?"
     options = ["Option A", "Option B", "Option C"]
-    success = scheduler.send_poll_via_api(group_jid, question, options)
+    success, error_detail = scheduler.send_poll_via_api(group_jid, question, options)
     
     if success:
         print("✓ Poll sent successfully!")
     else:
-        print("✗ Poll failed")
+        print(f"✗ Poll failed: {error_detail}")
     
     return success
 

@@ -339,8 +339,8 @@ class MessageScheduler:
         
         return contact
     
-    def send_message_via_api(self, contact: str, message: str) -> bool:
-        """Send message via driver API"""
+    def send_message_via_api(self, contact: str, message: str):
+        """Send message via driver API. Returns (True, None) on success or (False, error_detail) on failure."""
         try:
             resolved = self._resolve_group_name(contact)
             response = requests.post(
@@ -350,16 +350,17 @@ class MessageScheduler:
             )
             if response.status_code == 200:
                 logger.info(f"✓ Message sent to {contact}")
-                return True
+                return True, None
             else:
-                logger.error(f"✗ Failed: {response.text}")
-                return False
+                detail = self._parse_error_response(response, contact)
+                logger.error(f"✗ Failed: {detail}")
+                return False, detail
         except Exception as e:
             logger.error(f"✗ Error: {e}")
-            return False
+            return False, str(e)
     
-    def send_poll_via_api(self, contact: str, question: str, options: List[str], allow_multi_select: bool = False) -> bool:
-        """Send poll via driver API"""
+    def send_poll_via_api(self, contact: str, question: str, options: List[str], allow_multi_select: bool = False):
+        """Send poll via driver API. Returns (True, None) on success or (False, error_detail) on failure."""
         try:
             resolved = self._resolve_group_name(contact)
             response = requests.post(
@@ -369,10 +370,27 @@ class MessageScheduler:
             )
             if response.status_code == 200:
                 logger.info(f"✓ Poll sent to {contact}")
-                return True
+                return True, None
             else:
-                logger.error(f"✗ Failed: {response.text}")
-                return False
+                detail = self._parse_error_response(response, contact)
+                logger.error(f"✗ Failed: {detail}")
+                return False, detail
         except Exception as e:
             logger.error(f"✗ Error: {e}")
-            return False
+            return False, str(e)
+
+    @staticmethod
+    def _parse_error_response(response, contact: str) -> str:
+        """Extract a human-readable error from the driver's JSON error response."""
+        try:
+            data = response.json()
+            parts = []
+            if data.get('message'):
+                parts.append(data['message'])
+            if data.get('chatId'):
+                parts.append(f"Chat ID used: {data['chatId']}")
+            if data.get('hint'):
+                parts.append(data['hint'])
+            return ' | '.join(parts) if parts else response.text
+        except Exception:
+            return response.text

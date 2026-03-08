@@ -439,7 +439,12 @@ app.post('/send_message', async (req, res) => {
     res.json({ status: 'ok' });
   } catch (error) {
     console.error('Error sending message:', error);
-    res.status(500).json({ status: 'error', message: error.message });
+    res.status(500).json({
+      status: 'error',
+      message: error.message || String(error),
+      chatId,
+      hint: 'Check the contact number format. Ensure it includes the country code (e.g. 27821234567) and has a WhatsApp account.'
+    });
   }
 });
 
@@ -513,7 +518,12 @@ app.post('/send_poll', async (req, res) => {
 
   } catch (error) {
     console.error('Error sending poll:', error);
-    res.status(500).json({ status: 'error', message: error.message });
+    res.status(500).json({
+      status: 'error',
+      message: error.message || String(error),
+      chatId,
+      hint: 'Check the contact/group format. For groups use the group name, for contacts use country code + number.'
+    });
   }
 });
 

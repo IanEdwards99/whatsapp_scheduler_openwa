@@ -169,7 +169,7 @@ def send_now():
                     flash("Please provide contact and message.", "error")
                     return redirect(url_for("send_now"))
                 
-                success = scheduler.send_message_via_api(contact, message)
+                success, error_detail = scheduler.send_message_via_api(contact, message)
                 
                 # Log to history
                 history.add_entry(
@@ -177,13 +177,13 @@ def send_now():
                     contact=contact,
                     content={'message': message},
                     status='sent' if success else 'failed',
-                    metadata={'source': 'manual'}
+                    metadata={'source': 'manual', **({"error": error_detail} if error_detail else {})}
                 )
                 
                 if success:
                     flash("Message sent successfully!", "success")
                 else:
-                    flash("Failed to send message.", "error")
+                    flash(f"Failed to send message: {error_detail}", "error")
             
             elif schedule_type == "poll":
                 question = request.form.get("question")
@@ -199,7 +199,7 @@ def send_now():
                     flash("Poll options must be unique.", "error")
                     return redirect(url_for("send_now"))
                 
-                success = scheduler.send_poll_via_api(contact, question, options, allow_multi_select)
+                success, error_detail = scheduler.send_poll_via_api(contact, question, options, allow_multi_select)
                 
                 # Log to history
                 history.add_entry(
@@ -207,13 +207,13 @@ def send_now():
                     contact=contact,
                     content={'question': question, 'options': options, 'allow_multi_select': allow_multi_select},
                     status='sent' if success else 'failed',
-                    metadata={'source': 'manual'}
+                    metadata={'source': 'manual', **({"error": error_detail} if error_detail else {})}
                 )
                 
                 if success:
                     flash("Poll sent successfully!", "success")
                 else:
-                    flash("Failed to send poll.", "error")
+                    flash(f"Failed to send poll: {error_detail}", "error")
         
         except Exception as e:
             flash(f"Error: {e}", "error")

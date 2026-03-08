@@ -250,14 +250,14 @@ class EnhancedScheduleProcessor:
                 logger.info(f"Sending message to {contact}: {message[:50]}...")
                 
                 # Send via driver API
-                success = self.scheduler.send_message_via_api(contact, message)
+                success, error_detail = self.scheduler.send_message_via_api(contact, message)
                 
                 # Send email alert on failure
                 if not success:
                     get_notifier().send_failure_alert(
                         contact=contact,
                         content_type='message',
-                        error=f"Failed to send message: {message[:100]}..."
+                        error=f"Failed to send message: {error_detail or message[:100]}"
                     )
                 
                 # Log to message history with metadata
@@ -269,7 +269,8 @@ class EnhancedScheduleProcessor:
                     metadata={
                         'source': 'scheduled',
                         'recurring': schedule.get('recurring'),
-                        'scheduled_time': schedule.get('time')
+                        'scheduled_time': schedule.get('time'),
+                        **(({'error': error_detail} if error_detail else {}))
                     }
                 )
                 
@@ -283,14 +284,14 @@ class EnhancedScheduleProcessor:
                 logger.info(f"Sending poll to {contact}: {question[:50]}...")
                 
                 # Send via driver API
-                success = self.scheduler.send_poll_via_api(contact, question, options, allow_multi_select)
+                success, error_detail = self.scheduler.send_poll_via_api(contact, question, options, allow_multi_select)
                 
                 # Send email alert on failure
                 if not success:
                     get_notifier().send_failure_alert(
                         contact=contact,
                         content_type='poll',
-                        error=f"Failed to send poll: {question}"
+                        error=f"Failed to send poll: {error_detail or question}"
                     )
                 
                 # Log to message history with metadata
@@ -302,7 +303,8 @@ class EnhancedScheduleProcessor:
                     metadata={
                         'source': 'scheduled',
                         'recurring': schedule.get('recurring'),
-                        'scheduled_time': schedule.get('time')
+                        'scheduled_time': schedule.get('time'),
+                        **(({'error': error_detail} if error_detail else {}))
                     }
                 )
                 
