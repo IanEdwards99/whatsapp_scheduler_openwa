@@ -14,13 +14,15 @@ RestartSec=30
 # Default 90s is not enough; prevents SIGKILL which corrupts session
 TimeoutStopSec=300
 
-# Give the RPi 3B+ plenty of time to start up (Chromium + WhatsApp can take 2-3 min)
-TimeoutStartSec=600
+# Give the RPi 3B+ plenty of time to start up
+# The Node process itself handles retries with exponential backoff,
+# so we set this to infinity to avoid systemd killing it mid-retry.
+TimeoutStartSec=infinity
 
 # Auto-restart if memory usage gets too high (Chromium leak protection)
-# Pi has ~1GB RAM, limit Chromium to 700MB before restart
-MemoryMax=700M
-MemoryHigh=600M
+# Pi has ~1GB RAM, limit Chromium to 800MB before restart
+MemoryMax=800M
+MemoryHigh=650M
 
 # Limit restart bursts: max 5 restarts in 10 minutes
 StartLimitIntervalSec=600

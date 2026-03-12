@@ -56,12 +56,104 @@ console.log(`Detected Chromium path: ${chromiumPath || '(bundled)'}`);
  * Wrapper function to restart the WhatsApp client.
  * Passed to open-wa's `restartOnCrash` so that if the browser
  * process dies, the client is re-initialised automatically.
+ * Uses retryInitializeClient for resilience.
  */
 function start() {
   console.log('🔄 Restarting WhatsApp client (crash recovery)...');
-  initializeClient().catch(err => {
+  retryInitializeClient().catch(err => {
     console.error('Failed to restart WhatsApp client after crash:', err);
   });
+}
+
+/**
+ * Retry wrapper around initializeClient with exponential backoff.
+ * Retries up to MAX_INIT_RETRIES times with increasing delays.
+ * Sends an email alert if all retries are exhausted.
+ */
+const MAX_INIT_RETRIES = 3;
+const BASE_RETRY_DELAY_MS = 30000; // 30 seconds
+
+async function retryInitializeClient() {
+  for (let attempt = 1; attempt <= MAX_INIT_RETRIES; attempt++) {
+    console.log(`\n🚀 Initialization attempt ${attempt}/${MAX_INIT_RETRIES}...`);
+
+    try {
+      await initializeClient();
+      if (clientReady) {
+        console.log(`✅ Client initialized successfully on attempt ${attempt}`);
+        return;
+      }
+    } catch (err) {
+      console.error(`❌ Attempt ${attempt} failed:`, err.message || err);
+    }
+
+    // Clean up any zombie browser processes before retrying
+    await cleanupBrowserProcesses();
+
+    if (attempt < MAX_INIT_RETRIES) {
+      const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+      console.log(`⏳ Waiting ${delay / 1000}s before retry...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  // All retries exhausted
+  console.error(`🚨 CRITICAL: Failed to initialize WhatsApp client after ${MAX_INIT_RETRIES} attempts!`);
+  await sendFailureEmail();
+}
+
+/**
+ * Kill any lingering Chromium / browser processes that may be leaking memory.
+ */
+async function cleanupBrowserProcesses() {
+  try {
+    // Force-close the existing client if it's in a bad state
+    if (client) {
+      try {
+        await client.kill();
+      } catch (e) {
+        // Ignore errors during cleanup
+      }
+      client = null;
+      clientReady = false;
+    }
+    // Kill any orphaned Chromium processes
+    try {
+      execSync('pkill -f chromium 2>/dev/null || true');
+    } catch (e) {
+      // Ignore
+    }
+    // Give the OS time to reclaim memory
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  } catch (e) {
+    console.error('Error during browser cleanup:', e.message);
+  }
+}
+
+/**
+ * Send email notification when initialization completely fails.
+ */
+async function sendFailureEmail() {
+  if (!emailUser || !emailPass || !emailTo) {
+    console.log('Email credentials not set. Skipping failure notification.');
+    return;
+  }
+  try {
+    const ramInfo = execSync('free -m').toString().trim();
+    const mailOptions = {
+      from: emailUser,
+      to: emailTo,
+      subject: '🚨 WhatsApp Driver: Initialization Failed',
+      text: `WhatsApp Driver failed to initialize after ${MAX_INIT_RETRIES} attempts.\n\n` +
+        `The service will be restarted by systemd (Restart=always).\n\n` +
+        `Memory info:\n${ramInfo}\n\n` +
+        `Check logs with: sudo journalctl -u whatsapp-driver -n 100 --no-pager`,
+    };
+    await transporter.sendMail(mailOptions);
+    console.log('Failure notification email sent to', emailTo);
+  } catch (err) {
+    console.error('Failed to send failure notification email:', err);
+  }
 }
 // Email notification setup
 const emailUser = process.env.EMAIL_USER;
@@ -219,16 +311,29 @@ async function initializeClient() {
       blockAssets: false,
 
       // Increased timeouts for Raspberry Pi / low-memory systems
-      // 10 minutes for Puppeteer protocol calls (Pi is very slow with many contacts)
-      protocolTimeout: 600000,
+      // 15 minutes for Puppeteer protocol calls (Pi is very slow with many contacts)
+      protocolTimeout: 900000, // 15 min
+
+      // Skip the "ripe session" wait — with 3000+ contacts, full sync can take
+      // 10-15+ minutes.  Setting to 1 makes the driver ready almost immediately
+      // after auth; WhatsApp Web continues syncing chats in the background.
+      waitForRipeSessionTimeout: 1, // skip (sync happens in background)
 
       // RPi Optimization: Chromium flags for low-memory environment
-      // Re-enabling some safe ones to help with stability
       chromiumArgs: [
         '--no-zygote',                     // Saves memory by spawning fewer processes
         '--disable-dev-shm-usage',         // Use disk instead of small shared memory
-        // '--disable-accelerated-2d-canvas', // Keep these commented if they cause issues
-        // '--disable-gpu',
+        '--disable-gpu',                   // No GPU on Pi
+        '--disable-accelerated-2d-canvas', // Save GPU memory
+        '--disable-software-rasterizer',   // Save memory
+        '--disable-extensions',            // No extensions needed
+        '--disable-background-networking', // Reduce activity during init
+        '--disable-sync',                  // No Chrome sync needed
+        '--disable-translate',             // Not needed
+        '--no-first-run',                  // Skip first-run dialogs
+        // Pi-only flags (uncomment when deploying to RPi):
+        // '--single-process',                // Use a single process to save memory on Pi
+        // '--js-flags=--max-old-space-size=256', // Limit V8 heap in browser
       ],
 
       // Don't wait for full sync - let it happen in background
@@ -297,8 +402,11 @@ async function initializeClient() {
       qrCodeData = null;
     }
   } catch (error) {
-    console.error('Error initializing WhatsApp client:', error);
+    console.error('Error initializing WhatsApp client:', error.message || error);
     clientReady = false;
+    client = null;
+    // Rethrow so retryInitializeClient knows this attempt failed
+    throw error;
   }
 }
 
@@ -539,12 +647,13 @@ const server = app.listen(PORT, () => {
   console.log('  POST /send_message      - Send text message');
   console.log('  POST /send_poll         - Send poll (native/buttons/list)');
 
-  // Initialize WhatsApp client asynchronously (non-blocking)
+  // Initialize WhatsApp client asynchronously (non-blocking) with retry logic
   // First run will show QR code in console for phone scanning
   // Subsequent runs reuse session from whatsapp_scheduler.data.json
-  initializeClient().catch(err => {
-    console.error('Failed to initialize WhatsApp client:', err);
+  retryInitializeClient().catch(err => {
+    console.error('Failed to initialize WhatsApp client after all retries:', err);
     console.error('Server will continue running but won\'t be able to send messages');
+    console.error('systemd will restart the service (Restart=always)');
   });
 });
 
