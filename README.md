@@ -1270,3 +1270,6 @@ For questions or issues, check the troubleshooting section or review logs.
 ## License
 
 See LICENSE file for details.
+
+## Further work:
+V2 can upgrade to use Baileys lighter weight websocket connection to WhatsApp instead of open-wa running a headless chromium whatsapp web. This will be a lot lighter weight and faster. 

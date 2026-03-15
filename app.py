@@ -9,6 +9,9 @@ import time
 from dotenv import load_dotenv
 load_dotenv()
 
+import os
+import signal
+
 app = Flask(__name__)
 app.secret_key = "your_secret_key_change_in_production"
 scheduler = MessageScheduler("schedules/schedule.json")
@@ -236,6 +239,17 @@ def view_history():
     stats = history.get_stats()
     return render_template("history.html", history=recent, stats=stats)
 
+
+
+@app.route("/shutdown", methods=["POST"])
+def shutdown():
+    """Shutdown the Flask server"""
+    try:
+        scheduler.stop()
+    except:
+        pass
+    os.kill(os.getpid(), signal.SIGINT)
+    return "Server is shutting down..."
 
 @app.route("/api/status")
 def api_status():

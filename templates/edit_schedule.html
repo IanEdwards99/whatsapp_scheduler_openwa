@@ -16,6 +16,10 @@
                 <a href="/send_now" class="nav-link">Send Now</a>
                 <a href="/overview" class="nav-link">Overview</a>
                 <a href="/history" class="nav-link">History</a>
+            
+                <form action="/shutdown" method="post" style="display: inline; float: right;">
+                    <button type="submit" class="nav-link" style="background: none; border: none; cursor: pointer; color: #dc3545; font-weight: bold; margin-left: 15px;" onclick="return confirm("Are you sure you want to completely shut down the server?");">🛑 Shutdown</button>
+                </form>
             </nav>
         </header>
 
