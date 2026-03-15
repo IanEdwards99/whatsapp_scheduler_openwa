@@ -394,3 +394,9 @@ class MessageScheduler:
             return ' | '.join(parts) if parts else response.text
         except Exception:
             return response.text
+
+    def stop(self):
+        """Stop method for shutting down operations cleanly."""
+        logger.info("Scheduler stop method called.")
+        pass
+

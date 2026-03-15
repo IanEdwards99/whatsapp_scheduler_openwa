@@ -384,6 +384,26 @@ Message history dashboard with statistics.
 **DELETE `/delete/<index>`**  
 Remove schedule by index.
 
+### Telegram Bot (telegram_bot.py)
+
+Interact with the scheduler directly from Telegram without needing the web UI.
+
+**Setup**:
+1. Get a bot token from BotFather (`@BotFather`) on Telegram.
+2. Add your token to the `.env` file:
+   ```env
+   TELEGRAM_TOKEN=your_bot_token_here
+   ```
+3. Run the bot script:
+   ```bash
+   python3 telegram_bot.py
+   ```
+
+**Available Commands**:
+- `/list` - View all upcoming schedules
+- `/add <contact> | <message> | <YYYY-MM-DDTHH:MM> | [recurring]` - Add a new schedule
+- `/delete <index>` - Delete a schedule by its index
+
 ## Schedule Format
 
 Schedules are stored in `schedules/schedule.json`:
