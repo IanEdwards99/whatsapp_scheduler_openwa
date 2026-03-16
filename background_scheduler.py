@@ -30,6 +30,7 @@ Or as systemd service for production deployment.
 import time
 import requests
 import logging
+import threading
 import subprocess
 import os
 from datetime import datetime
@@ -368,6 +369,15 @@ class EnhancedScheduleProcessor:
 
 
 if __name__ == "__main__":
+    # Start Telegram bot in background thread if available
+    try:
+        from telegram_bot import run_bot
+        telegram_thread = threading.Thread(target=run_bot, daemon=True)
+        telegram_thread.start()
+        logger.info("Started Telegram bot in background thread")
+    except Exception as e:
+        logger.error(f"Failed to start telegram bot: {e}")
+
     # Create processor and start main loop
     processor = EnhancedScheduleProcessor(SCHEDULE_FILE, DRIVER_SERVER_URL)
     processor.run()
