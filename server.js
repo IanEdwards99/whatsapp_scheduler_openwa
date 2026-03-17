@@ -536,13 +536,13 @@ app.post('/send_message', async (req, res) => {
     return res.status(400).json({ status: 'error', message: 'Missing contact or message' });
   }
 
-  try {
-    // Convert contact to WhatsApp chat ID format
-    // If already a JID (contains @), use as-is; otherwise format as phone number
-    const chatId = contact.includes('@')
-      ? contact
-      : `${contact.replace(/[^\d]/g, '')}@c.us`;
+  // Convert contact to WhatsApp chat ID format
+  // If already a JID (contains @), use as-is; otherwise format as phone number
+  const chatId = contact.includes('@')
+    ? contact
+    : `${contact.replace(/[^\d]/g, '')}@c.us`;
 
+  try {
     await client.sendText(chatId, message);
     res.json({ status: 'ok' });
   } catch (error) {
@@ -586,12 +586,12 @@ app.post('/send_poll', async (req, res) => {
     return res.status(400).json({ status: 'error', message: 'Missing required fields' });
   }
 
-  try {
-    // Determine chat ID: if contact contains @, it's already a JID; otherwise format as phone
-    const chatId = contact.includes('@')
-      ? contact
-      : `${contact.replace(/[^\d]/g, '')}@c.us`;
+  // Determine chat ID: if contact contains @, it's already a JID; otherwise format as phone
+  const chatId = contact.includes('@')
+    ? contact
+    : `${contact.replace(/[^\d]/g, '')}@c.us`;
 
+  try {
     // STRATEGY 1: Native poll for groups
     // Group JIDs end with @g.us (e.g., 120363404652820092@g.us)
     if (chatId.endsWith('@g.us')) {
