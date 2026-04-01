@@ -15,6 +15,11 @@
                 <a href="/add" class="nav-link">Add Schedule</a>
                 <a href="/send_now" class="nav-link active">Send Now</a>
                 <a href="/overview" class="nav-link">Overview</a>
+                <a href="/history" class="nav-link">History</a>
+            
+                <form action="/shutdown" method="post" style="display: inline; float: right;">
+                    <button type="submit" class="nav-link" style="background: none; border: none; cursor: pointer; color: #dc3545; font-weight: bold; margin-left: 15px;" onclick="return confirm("Are you sure you want to completely shut down the server?");">🛑 Shutdown</button>
+                </form>
             </nav>
         </header>
 
@@ -68,6 +73,13 @@
                             <label for="options">Poll Options</label>
                             <input type="text" name="options" id="options" placeholder="Option 1, Option 2, Option 3">
                             <small>Separate options with commas</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="allow_multi_select" id="allow_multi_select">
+                                <span>Allow multiple selections</span>
+                            </label>
+                            <small>If checked, users can select more than one option</small>
                         </div>
                     </div>
 

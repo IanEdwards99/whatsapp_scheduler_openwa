@@ -40,7 +40,7 @@ class MessageScheduler:
         self.save_schedules()
         logger.info(f"Added message schedule for {contact} at {time}")
     
-    def add_poll_schedule(self, contact: str, question: str, options: List[str], time: str, recurring: Optional[str] = None):
+    def add_poll_schedule(self, contact: str, question: str, options: List[str], time: str, recurring: Optional[str] = None, allow_multi_select: bool = False):
         """Add a poll schedule"""
         schedule = {
             'type': 'poll',
@@ -48,7 +48,8 @@ class MessageScheduler:
             'question': question,
             'options': options,
             'time': time,
-            'recurring': recurring
+            'recurring': recurring,
+            'allow_multi_select': allow_multi_select
         }
         self.schedules.append(schedule)
         self.save_schedules()
@@ -86,7 +87,7 @@ class MessageScheduler:
             logger.error(f"Error sending message: {e}")
             return False
     
-    def send_poll_via_api(self, contact: str, question: str, options: List[str]) -> bool:
+    def send_poll_via_api(self, contact: str, question: str, options: List[str], allow_multi_select: bool = False) -> bool:
         """Send a poll through the driver server API"""
         try:
             # Try to resolve group name to JID
@@ -94,7 +95,7 @@ class MessageScheduler:
             
             response = requests.post(
                 f"{self.driver_server_url}/send_poll",
-                json={"contact": resolved_contact, "question": question, "options": options},
+                json={"contact": resolved_contact, "question": question, "options": options, "allowMultiSelect": allow_multi_select},
                 timeout=30
             )
             if response.status_code == 200:
@@ -117,7 +118,7 @@ class MessageScheduler:
             # Fetch groups from driver and search for matching name (case-insensitive)
             response = requests.get(
                 f"{self.driver_server_url}/get_groups",
-                timeout=10
+                timeout=30
             )
             if response.status_code == 200:
                 data = response.json()
@@ -134,6 +135,9 @@ class MessageScheduler:
             else:
                 logger.warning(f"Failed to fetch groups: {response.text}. Using contact as-is.")
                 return contact
+        except requests.Timeout:
+            logger.warning(f"Timeout resolving group '{contact}' - driver may be slow or unresponsive")
+            return contact
         except Exception as e:
             logger.warning(f"Error resolving group name: {e}. Using contact as-is.")
             return contact

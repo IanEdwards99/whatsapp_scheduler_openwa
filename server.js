@@ -1,62 +1,480 @@
+/**
+ * WhatsApp Driver Server
+ * 
+ * This Node.js server manages the WhatsApp Web connection using @open-wa/wa-automate
+ * and exposes a simple HTTP API for sending messages and polls.
+ * 
+ * Architecture:
+ * - Uses Puppeteer to control Chromium browser connected to WhatsApp Web
+ * - Session persisted in whatsapp_scheduler.data.json (no repeated QR scans)
+ * - Exposes REST API on port 5001 for Python scheduler to consume
+ * - Handles group name→JID resolution via /get_groups endpoint
+ * 
+ * Port: 5001
+ * Dependencies: @open-wa/wa-automate, express, body-parser
+ */
+
 import wa from '@open-wa/wa-automate';
 import express from 'express';
 import bodyParser from 'body-parser';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+import QRCode from 'qrcode';
+import fs from 'fs';
+import { execSync } from 'child_process';
+import nodemailer from 'nodemailer';
+import dotenv from 'dotenv';
+dotenv.config();
+
+/**
+ * Detect the correct Chromium executable path at runtime.
+ * Supports both development (Ubuntu/Debian) and RPi environments.
+ */
+function findChromiumPath() {
+  const candidates = [
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/snap/bin/chromium',
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  // Fallback: let open-wa find it via bundled Chromium
+  console.warn('⚠️  No system Chromium found, relying on bundled browser');
+  return undefined;
+}
+
+const chromiumPath = findChromiumPath();
+console.log(`Detected Chromium path: ${chromiumPath || '(bundled)'}`);
+
+/**
+ * Wrapper function to restart the WhatsApp client.
+ * Passed to open-wa's `restartOnCrash` so that if the browser
+ * process dies, the client is re-initialised automatically.
+ * Uses retryInitializeClient for resilience.
+ */
+function start() {
+  console.log('🔄 Restarting WhatsApp client (crash recovery)...');
+  retryInitializeClient().catch(err => {
+    console.error('Failed to restart WhatsApp client after crash:', err);
+  });
+}
+
+/**
+ * Retry wrapper around initializeClient with exponential backoff.
+ * Retries up to MAX_INIT_RETRIES times with increasing delays.
+ * Sends an email alert if all retries are exhausted.
+ */
+const MAX_INIT_RETRIES = 3;
+const BASE_RETRY_DELAY_MS = 30000; // 30 seconds
+
+async function retryInitializeClient() {
+  for (let attempt = 1; attempt <= MAX_INIT_RETRIES; attempt++) {
+    console.log(`\n🚀 Initialization attempt ${attempt}/${MAX_INIT_RETRIES}...`);
+
+    try {
+      await initializeClient();
+      if (clientReady) {
+        console.log(`✅ Client initialized successfully on attempt ${attempt}`);
+        return;
+      }
+    } catch (err) {
+      console.error(`❌ Attempt ${attempt} failed:`, err.message || err);
+    }
+
+    // Clean up any zombie browser processes before retrying
+    await cleanupBrowserProcesses();
+
+    if (attempt < MAX_INIT_RETRIES) {
+      const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+      console.log(`⏳ Waiting ${delay / 1000}s before retry...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  // All retries exhausted
+  console.error(`🚨 CRITICAL: Failed to initialize WhatsApp client after ${MAX_INIT_RETRIES} attempts!`);
+  await sendFailureEmail();
+}
+
+/**
+ * Kill any lingering Chromium / browser processes that may be leaking memory.
+ */
+async function cleanupBrowserProcesses() {
+  try {
+    // Force-close the existing client if it's in a bad state
+    if (client) {
+      try {
+        await client.kill();
+      } catch (e) {
+        // Ignore errors during cleanup
+      }
+      client = null;
+      clientReady = false;
+    }
+    // Kill any orphaned Chromium processes
+    try {
+      execSync('pkill -f chromium 2>/dev/null || true');
+    } catch (e) {
+      // Ignore
+    }
+    // Give the OS time to reclaim memory
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  } catch (e) {
+    console.error('Error during browser cleanup:', e.message);
+  }
+}
+
+/**
+ * Send email notification when initialization completely fails.
+ */
+async function sendFailureEmail() {
+  if (!emailUser || !emailPass || !emailTo) {
+    console.log('Email credentials not set. Skipping failure notification.');
+    return;
+  }
+  try {
+    const ramInfo = execSync('free -m').toString().trim();
+    const mailOptions = {
+      from: emailUser,
+      to: emailTo,
+      subject: '🚨 WhatsApp Driver: Initialization Failed',
+      text: `WhatsApp Driver failed to initialize after ${MAX_INIT_RETRIES} attempts.\n\n` +
+        `The service will be restarted by systemd (Restart=always).\n\n` +
+        `Memory info:\n${ramInfo}\n\n` +
+        `Check logs with: sudo journalctl -u whatsapp-driver -n 100 --no-pager`,
+    };
+    await transporter.sendMail(mailOptions);
+    console.log('Failure notification email sent to', emailTo);
+  } catch (err) {
+    console.error('Failed to send failure notification email:', err);
+  }
+}
+// Email notification setup
+const emailUser = process.env.EMAIL_USER;
+const emailPass = process.env.EMAIL_PASS;
+const emailTo = process.env.EMAIL_TO;
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: emailUser,
+    pass: emailPass,
+  },
+});
+
+async function sendQrEmail(qrPath) {
+  if (!emailUser || !emailPass || !emailTo) {
+    console.log('Email credentials not set. Skipping QR email notification.');
+    return;
+  }
+  try {
+    const mailOptions = {
+      from: emailUser,
+      to: emailTo,
+      subject: 'WhatsApp Scheduler: Authentication Required',
+      text: 'WhatsApp Scheduler requires authentication. Scan the attached QR code to log in.',
+      html: '<p>WhatsApp Scheduler requires authentication.<br>Scan the attached QR code to log in.</p>',
+      attachments: [
+        {
+          filename: 'qr_code.png',
+          path: qrPath,
+        },
+      ],
+    };
+    await transporter.sendMail(mailOptions);
+    console.log('QR code email sent to', emailTo);
+  } catch (err) {
+    console.error('Failed to send QR code email:', err);
+  }
+}
 
 const app = express();
 app.use(bodyParser.json());
 
-let client = null;
-let clientReady = false;
+// Global client state
+let client = null;           // WhatsApp client instance
+let clientReady = false;     // Connection readiness flag
+let qrCodeData = null;       // Store QR code data for PNG export
+let pageRef = null;          // Store page reference for screenshots
+let qrEmailSent = false;     // Prevent sending multiple QR emails per auth attempt
 
-// Initialize WhatsApp client
-async function initializeClient() {
+/**
+ * Save QR code as PNG file
+ * 
+ * Converts base64 QR code data to PNG image file for headless deployments.
+ * Enables scanning QR via browser (http://pi-ip:5001/qr_code.png) or SCP download
+ * when running on Raspberry Pi without display.
+ * 
+ * @param {string} qrData - Base64 QR code data from open-wa (already an image)
+ * @returns {Promise<void>}
+ */
+async function saveQRCodeAsPNG(qrData) {
   try {
-    console.log('Initializing WhatsApp client...');
-    client = await wa.create({
-      sessionId: 'whatsapp_scheduler',
-      sessionDataPath: './',
-      headless: true,
-      // Keep multiDevice false to match the saved session file format in this repo.
-      multiDevice: false,
-      // Use the system Chromium binary if available. If your environment has a different
-      // path, update `executablePath` accordingly.
-      useChrome: true,
-      executablePath: '/usr/bin/chromium-browser',
-      // Add common Linux-friendly Chromium launch args to avoid sandboxing issues.
-      chromiumArgs: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-extensions',
-        '--no-zygote',
-        '--single-process'
-      ],
-      qrTimeout: 0,
-      authTimeout: 0,
-      skipUpdateCheck: true,
-      // Enable console logs from the browser for easier debugging if needed.
-      logConsole: true
-    });
-
-    // Set up message listener
-    client.onMessage(msg => {
-      console.log(`Message received from ${msg.from}: ${msg.body}`);
-    });
-
-    clientReady = true;
-    console.log('WhatsApp client initialized successfully!');
+    let saved = false;
+    if (qrData.startsWith('data:image')) {
+      const base64Data = qrData.split(',')[1];
+      const buffer = Buffer.from(base64Data, 'base64');
+      fs.writeFileSync('qr_code.png', buffer);
+      saved = true;
+      console.log('QR code saved as qr_code.png');
+      console.log('Access it at: http://localhost:5001/qr_code.png');
+    } else {
+      await QRCode.toFile('qr_code.png', qrData, {
+        width: 512,
+        margin: 2,
+        color: {
+          dark: '#000000',
+          light: '#ffffff'
+        }
+      });
+      saved = true;
+      console.log('QR code saved as qr_code.png');
+    }
+    // Only send the email ONCE per authentication attempt.
+    // The QR refreshes every 60s but we don't need to spam the inbox.
+    if (saved && !qrEmailSent) {
+      qrEmailSent = true;
+      await sendQrEmail('qr_code.png');
+    }
   } catch (error) {
-    console.error('Error initializing WhatsApp client:', error);
-    clientReady = false;
+    console.error('Error saving QR code as PNG:', error);
   }
 }
 
-// Health check endpoint
+/**
+ * Initialize WhatsApp Web client
+ * 
+ * Creates a persistent WhatsApp Web session using open-wa:
+ * - First run: displays QR code in console for phone scanning
+ * - Subsequent runs: rehydrates session from whatsapp_scheduler.data.json
+ * - Configures Chromium with Linux-friendly flags (no-sandbox for Pi/Docker)
+ * - Sets up message listener for incoming message logging
+ * 
+ * @returns {Promise<void>}
+ */
+async function initializeClient() {
+  try {
+    console.log('Initializing WhatsApp client...');
+    console.log('Working directory:', process.cwd());
+    const sessionStorePath = path.join(__dirname, 'whatsapp_session_store');
+    console.log('Session store path:', sessionStorePath);
+
+    let qrReceived = false;
+    let screenshotInterval = null;
+    qrEmailSent = false;  // Reset email flag for this auth attempt
+
+    // Use ev (event) mode to get page access before authentication completes
+    wa.ev.on('qr.**', async (qrData, sessionId) => {
+      console.log('🎯 QR EVENT RECEIVED!');
+      qrCodeData = qrData;
+      qrReceived = true;
+
+      // Save QR as PNG
+      await saveQRCodeAsPNG(qrData);
+      console.log('✅ QR code saved!');
+      console.log('   Access at: http://<your-ip>:5001/qr_code.png');
+    });
+
+    // Also listen for page events to take screenshots as fallback
+    wa.ev.on('PAGE.**', async (page) => {
+      console.log('📄 PAGE EVENT - Taking screenshot...');
+      try {
+        await page.screenshot({ path: 'qr_screenshot.png', fullPage: true });
+        console.log('✅ Screenshot saved to qr_screenshot.png');
+        console.log('   Access at: http://<your-ip>:5001/qr_screenshot.png');
+      } catch (e) {
+        console.log('Screenshot error:', e.message);
+      }
+    });
+
+    // Create client with qrCallback as fallback
+    client = await wa.create({
+      userDataDir: sessionStorePath,
+      headless: true,
+      useChrome: !!chromiumPath,
+      ...(chromiumPath ? { executablePath: chromiumPath } : {}),
+
+      // Explicitly set sessionId to ensure consistent file naming
+      sessionId: 'whatsapp_scheduler',
+
+      // Auto-restart if the client crashes relative to the node process
+      restartOnCrash: start,
+
+      // RPi Optimization: Block assets to save RAM
+      // DISABLED for debugging - sometimes blocks auth scripts
+      blockAssets: false,
+
+      // Increased timeouts for Raspberry Pi / low-memory systems
+      // 15 minutes for Puppeteer protocol calls (Pi is very slow with many contacts)
+      protocolTimeout: 900000, // 15 min
+
+      // Skip the "ripe session" wait — with 3000+ contacts, full sync can take
+      // 10-15+ minutes.  Setting to 1 makes the driver ready almost immediately
+      // after auth; WhatsApp Web continues syncing chats in the background.
+      waitForRipeSessionTimeout: 1, // skip (sync happens in background)
+
+      // RPi Optimization: Chromium flags for low-memory environment
+      chromiumArgs: [
+        '--no-zygote',                     // Saves memory by spawning fewer processes
+        '--disable-dev-shm-usage',         // Use disk instead of small shared memory
+        '--disable-gpu',                   // No GPU on Pi
+        '--disable-accelerated-2d-canvas', // Save GPU memory
+        '--disable-software-rasterizer',   // Save memory
+        '--disable-extensions',            // No extensions needed
+        '--disable-background-networking', // Reduce activity during init
+        '--disable-sync',                  // No Chrome sync needed
+        '--disable-translate',             // Not needed
+        '--no-first-run',                  // Skip first-run dialogs
+        // Pi-only flags (uncomment when deploying to RPi):
+        // '--single-process',                // Use a single process to save memory on Pi
+        // '--js-flags=--max-old-space-size=256', // Limit V8 heap in browser
+      ],
+
+      // Don't wait for full sync - let it happen in background
+      // (waitForRipeSession causes infinite hang with 3000+ contacts on Pi)
+
+      qrRefreshS: 60,
+      qrTimeout: 0,
+      authTimeout: 0,
+      disableSpins: true,
+      skipUpdateCheck: true,
+      logConsole: true, // Enable console logging to debug auth hang
+      logQR: true,  // Enable QR logging to console
+      killProcessOnBrowserClose: true,
+
+      // Fallback QR callback in case ev.on doesn't fire
+      qrCallback: async (qrData) => {
+        console.log('📱 QR CALLBACK RECEIVED!');
+        if (!qrReceived) {
+          qrCodeData = qrData;
+          await saveQRCodeAsPNG(qrData);
+          console.log('✅ QR code saved via callback!');
+          console.log('   Access at: http://<your-ip>:5001/qr_code.png');
+        }
+      },
+
+      // Get page reference for screenshots
+      onPageCreated: async (page) => {
+        console.log('📄 PAGE CREATED - Starting screenshot timer...');
+        // Take periodic screenshots until authenticated
+        screenshotInterval = setInterval(async () => {
+          if (clientReady) {
+            clearInterval(screenshotInterval);
+            return;
+          }
+          try {
+            await page.screenshot({ path: 'qr_screenshot.png', fullPage: true });
+            console.log('📸 Screenshot updated - Access at: http://<your-ip>:5001/qr_screenshot.png');
+          } catch (e) {
+            console.log('Screenshot error:', e.message);
+          }
+        }, 5000); // Every 5 seconds
+      },
+    });
+
+    // Clear screenshot interval after authentication
+    if (screenshotInterval) {
+      clearInterval(screenshotInterval);
+    }
+
+    console.log('✅ Authentication successful!');
+
+
+
+    // Disabled incoming message logging to save memory/journal space
+    // Uncomment if you need to debug incoming messages:
+    // client.onMessage(msg => {
+    //   console.log(`Message received from ${msg.from}: ${msg.body}`);
+    // });
+
+    clientReady = true;
+    console.log('✅ WhatsApp client initialized successfully!');
+
+    if (qrCodeData && fs.existsSync('qr_code.png')) {
+      fs.unlinkSync('qr_code.png');
+      console.log('QR code PNG deleted (authentication successful)');
+      qrCodeData = null;
+    }
+  } catch (error) {
+    console.error('Error initializing WhatsApp client:', error.message || error);
+    clientReady = false;
+    client = null;
+    // Rethrow so retryInitializeClient knows this attempt failed
+    throw error;
+  }
+}
+
+/**
+ * GET /status
+ * Health check endpoint
+ * 
+ * Returns driver status and readiness for accepting message/poll requests.
+ * Used by scheduler to verify driver is initialized before sending.
+ * 
+ * @returns {200} { status: 'ok', ready: true/false }
+ */
 app.get('/status', (req, res) => {
   res.json({ status: 'ok', ready: clientReady });
 });
 
-// Get all groups with name->JID mapping
+/**
+ * GET /qr_code.png
+ * Serve QR code PNG for scanning
+ * 
+ * Serves the QR code image file for headless deployments.
+ * Access via browser at http://pi-ip:5001/qr_code.png to scan with phone.
+ * File is automatically deleted after successful authentication.
+ * 
+ * @returns {200} PNG image file
+ * @returns {404} { status: 'error', message: string } - if no QR code available
+ */
+app.get('/qr_code.png', (req, res) => {
+  if (fs.existsSync('qr_code.png')) {
+    res.sendFile('qr_code.png', { root: '.' });
+  } else {
+    res.status(404).json({
+      status: 'error',
+      message: 'QR code not available (either not generated yet or already authenticated)'
+    });
+  }
+});
+
+/**
+ * GET /qr_screenshot.png
+ * Serve full page screenshot for debugging
+ * 
+ * Serves the full WhatsApp Web page screenshot (fallback if QR callback fails).
+ * 
+ * @returns {200} PNG image file
+ * @returns {404} { status: 'error', message: string } - if screenshot not available
+ */
+app.get('/qr_screenshot.png', (req, res) => {
+  if (fs.existsSync('qr_screenshot.png')) {
+    res.sendFile('qr_screenshot.png', { root: '.' });
+  } else {
+    res.status(404).json({
+      status: 'error',
+      message: 'Screenshot not available'
+    });
+  }
+});
+
+/**
+ * GET /get_groups
+ * List all WhatsApp groups with name→JID mapping
+ * 
+ * Fetches all group chats and returns their names, JIDs, and member counts.
+ * Used by scheduler for group name resolution (user types "Family" → resolves to JID).
+ * 
+ * @returns {200} { status: 'ok', groups: [{name, id, members}] }
+ * @returns {500} { status: 'error', message: string } - if client not ready
+ */
 app.get('/get_groups', async (req, res) => {
   if (!clientReady || !client) {
     return res.status(500).json({ status: 'error', message: 'WhatsApp client not ready' });
@@ -68,7 +486,7 @@ app.get('/get_groups', async (req, res) => {
       .filter(c => c.isGroup)
       .map(g => ({
         name: g.name,
-        id: g.id,
+        id: g.id,  // Group JID (e.g., 120363404652820092@g.us)
         members: g.groupMetadata?.participants?.length || 0
       }));
     res.json({ status: 'ok', groups });
@@ -78,7 +496,16 @@ app.get('/get_groups', async (req, res) => {
   }
 });
 
-// Open WhatsApp (client is already connected via open-wa)
+/**
+ * POST /open_whatsapp
+ * Legacy endpoint for compatibility
+ * 
+ * Client is already connected via open-wa, so this just returns success.
+ * Kept for backward compatibility with old scheduler versions.
+ * 
+ * @returns {200} { status: 'ok' }
+ * @returns {500} { status: 'error', message: string } - if client not ready
+ */
 app.post('/open_whatsapp', (req, res) => {
   if (!clientReady) {
     return res.status(500).json({ status: 'error', message: 'WhatsApp client not ready' });
@@ -86,7 +513,19 @@ app.post('/open_whatsapp', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Send message
+/**
+ * POST /send_message
+ * Send text message to contact or group
+ * 
+ * Sends a plain text message to the specified contact.
+ * Contact can be phone number or JID (for groups).
+ * 
+ * @param {string} contact - Phone number (+1 555 123 4567) or JID (120363...@g.us)
+ * @param {string} message - Text message content
+ * @returns {200} { status: 'ok' }
+ * @returns {400} { status: 'error', message: string } - missing fields
+ * @returns {500} { status: 'error', message: string } - send failed
+ */
 app.post('/send_message', async (req, res) => {
   if (!clientReady || !client) {
     return res.status(500).json({ status: 'error', message: 'WhatsApp client not ready' });
@@ -97,67 +536,157 @@ app.post('/send_message', async (req, res) => {
     return res.status(400).json({ status: 'error', message: 'Missing contact or message' });
   }
 
+  // Convert contact to WhatsApp chat ID format
+  // If already a JID (contains @), use as-is; otherwise format as phone number
+  const chatId = contact.includes('@')
+    ? contact
+    : `${contact.replace(/[^\d]/g, '')}@c.us`;
+
   try {
-    // Convert contact name to phone number format if needed
-    const chatId = `${contact.replace(/[^\d]/g, '')}@c.us`;
     await client.sendText(chatId, message);
     res.json({ status: 'ok' });
   } catch (error) {
     console.error('Error sending message:', error);
-    res.status(500).json({ status: 'error', message: error.message });
+    res.status(500).json({
+      status: 'error',
+      message: error.message || String(error),
+      chatId,
+      hint: 'Check the contact number format. Ensure it includes the country code (e.g. 27821234567) and has a WhatsApp account.'
+    });
   }
 });
 
-// Send poll
+/**
+ * POST /send_poll
+ * Send poll with automatic UI selection
+ * 
+ * Intelligently sends polls based on chat type and option count:
+ * - Groups (@g.us): Native WhatsApp poll UI (interactive, multi-tap)
+ * - Private chats with ≤3 options: Interactive button message
+ * - Private chats with >3 options: List selection message
+ * 
+ * This approach works around WhatsApp's limitation that native polls
+ * only work in group chats.
+ * 
+ * @param {string} contact - Phone number, group name, or JID
+ * @param {string} question - Poll question text
+ * @param {string[]} options - Array of poll options
+ * @param {boolean} [allowMultiSelect=false] - Allow selecting multiple options in polls
+ * @returns {200} { status: 'ok', method: 'poll'|'buttons'|'list' }
+ * @returns {400} { status: 'error', message: string } - missing fields
+ * @returns {500} { status: 'error', message: string } - send failed
+ */
 app.post('/send_poll', async (req, res) => {
   if (!clientReady || !client) {
     return res.status(500).json({ status: 'error', message: 'WhatsApp client not ready' });
   }
 
-  const { contact, question, options } = req.body;
+  const { contact, question, options, allowMultiSelect = false } = req.body;
   if (!contact || !question || !options || options.length === 0) {
     return res.status(400).json({ status: 'error', message: 'Missing required fields' });
   }
 
-  try {
-    // Determine chat id: if caller provided an explicit JID (e.g. group id), use it
-    const chatId = contact.includes('@') ? contact : `${contact.replace(/[^\d]/g, '')}@c.us`;
+  // Determine chat ID: if contact contains @, it's already a JID; otherwise format as phone
+  const chatId = contact.includes('@')
+    ? contact
+    : `${contact.replace(/[^\d]/g, '')}@c.us`;
 
-    // If this is a group chat id (ends with @g.us) we can send a native poll
+  try {
+    // STRATEGY 1: Native poll for groups
+    // Group JIDs end with @g.us (e.g., 120363404652820092@g.us)
     if (chatId.endsWith('@g.us')) {
       // sendPoll(to: GroupChatId, name: string, options: string[], quotedMsgId?: MessageId, allowMultiSelect?: boolean)
-      await client.sendPoll(chatId, question, options);
+      await client.sendPoll(chatId, question, options, undefined, allowMultiSelect);
       return res.json({ status: 'ok', method: 'poll' });
     }
 
-    // For 1:1 chats, WhatsApp doesn't support poll UI; use buttons for up to 3 options
+    // STRATEGY 2: Interactive buttons for ≤3 options in private chats
+    // WhatsApp buttons limited to 3 buttons maximum
     if (options.length <= 3) {
-      // Use the library-expected button shape: use `text` for the label where applicable.
-      const buttons = options.map((opt, i) => ({ id: `opt${i + 1}`, text: opt }));
+      // Button format: { id: string, text: string }
+      const buttons = options.map((opt, i) => ({
+        id: `opt${i + 1}`,  // Unique button ID
+        text: opt           // Button label
+      }));
       // sendButtons(to, body, buttons, title?, footer?)
       await client.sendButtons(chatId, question, buttons, 'Poll', 'Reply by tapping a button');
       return res.json({ status: 'ok', method: 'buttons' });
     }
 
-    // For more than 3 options, send a list message (user selects one item).
-    // Use `rowId` for the row identifier which is commonly expected by list APIs.
-    const rows = options.map((opt, i) => ({ rowId: `opt${i + 1}`, title: opt }));
+    // STRATEGY 3: List message for >3 options in private chats
+    // List messages allow selection from dropdown menu
+    const rows = options.map((opt, i) => ({
+      rowId: `opt${i + 1}`,   // Unique row identifier
+      title: opt              // Option text
+    }));
     const sections = [{ title: 'Options', rows }];
     // sendListMessage(to, sections, title, description, actionText)
     await client.sendListMessage(chatId, sections, 'Poll', question, 'Choose an option');
     return res.json({ status: 'ok', method: 'list' });
+
   } catch (error) {
     console.error('Error sending poll:', error);
-    res.status(500).json({ status: 'error', message: error.message });
+    res.status(500).json({
+      status: 'error',
+      message: error.message || String(error),
+      chatId,
+      hint: 'Check the contact/group format. For groups use the group name, for contacts use country code + number.'
+    });
   }
 });
 
-// Start server
+// Start Express server and initialize WhatsApp client
 const PORT = 5001;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  // Initialize client in the background, don't wait for it
-  initializeClient().catch(err => {
-    console.error('Failed to initialize client:', err);
+const server = app.listen(PORT, () => {
+  console.log(`WhatsApp Driver API server running on port ${PORT}`);
+  console.log('Available endpoints:');
+  console.log('  GET  /status            - Health check');
+  console.log('  GET  /qr_code.png       - QR code PNG (for headless scanning)');
+  console.log('  GET  /qr_screenshot.png - Full page screenshot (fallback)');
+  console.log('  GET  /get_groups        - List all groups');
+  console.log('  POST /send_message      - Send text message');
+  console.log('  POST /send_poll         - Send poll (native/buttons/list)');
+
+  // Initialize WhatsApp client asynchronously (non-blocking) with retry logic
+  // First run will show QR code in console for phone scanning
+  // Subsequent runs reuse session from whatsapp_scheduler.data.json
+  retryInitializeClient().catch(err => {
+    console.error('Failed to initialize WhatsApp client after all retries:', err);
+    console.error('Server will continue running but won\'t be able to send messages');
+    console.error('systemd will restart the service (Restart=always)');
   });
 });
+
+/**
+ * Graceful shutdown handler
+ * 
+ * Properly closes WhatsApp client and browser on SIGTERM/SIGINT.
+ * Prevents corrupted session data from hard kills.
+ */
+async function gracefulShutdown(signal) {
+  console.log(`\n${signal} received. Shutting down gracefully...`);
+
+  try {
+    // Close Express server first (stop accepting new requests)
+    server.close(() => {
+      console.log('HTTP server closed');
+    });
+
+    // Close WhatsApp client and browser
+    if (client) {
+      console.log('Closing WhatsApp client...');
+      await client.kill();
+      console.log('WhatsApp client closed');
+    }
+
+    console.log('Graceful shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+}
+
+// Handle shutdown signals from systemd
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

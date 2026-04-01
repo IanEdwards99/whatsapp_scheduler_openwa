@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Add Schedule - WhatsApp Scheduler</title>
+    <title>Edit Schedule - WhatsApp Scheduler</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -12,7 +12,7 @@
             <h1>📱 WhatsApp Scheduler</h1>
             <nav class="main-nav">
                 <a href="/" class="nav-link">Home</a>
-                <a href="/add" class="nav-link active">Add Schedule</a>
+                <a href="/add" class="nav-link">Add Schedule</a>
                 <a href="/send_now" class="nav-link">Send Now</a>
                 <a href="/overview" class="nav-link">Overview</a>
                 <a href="/history" class="nav-link">History</a>
@@ -23,20 +23,32 @@
             </nav>
         </header>
 
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message|safe }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
         <div class="content">
             <div class="form-card">
-                <h2>➕ Create New Schedule</h2>
+                <h2>✏️ Edit Schedule</h2>
 
                 <form method="POST" class="add-form">
                     <div class="form-group">
                         <label for="type">Message Type</label>
                         <div class="button-group">
                             <label class="radio-label">
-                                <input type="radio" name="type" value="message" id="type-message" checked onchange="toggleContent()">
+                                <input type="radio" name="type" value="message" id="type-message" 
+                                    {{ 'checked' if schedule.type == 'message' else '' }} onchange="toggleContent()">
                                 <span class="radio-button">💬 Message</span>
                             </label>
                             <label class="radio-label">
-                                <input type="radio" name="type" value="poll" id="type-poll" onchange="toggleContent()">
+                                <input type="radio" name="type" value="poll" id="type-poll" 
+                                    {{ 'checked' if schedule.type == 'poll' else '' }} onchange="toggleContent()">
                                 <span class="radio-button">📊 Poll</span>
                             </label>
                         </div>
@@ -44,29 +56,31 @@
 
                     <div class="form-group">
                         <label for="contact">Contact Name or Phone Number</label>
-                        <input type="text" name="contact" id="contact" placeholder="e.g., John Doe or +1234567890" required>
+                        <input type="text" name="contact" id="contact" value="{{ schedule.contact }}" required>
                     </div>
 
-                    <div id="message-content">
+                    <div id="message-content" style="{{ 'display:block;' if schedule.type == 'message' else 'display:none;' }}">
                         <div class="form-group">
                             <label for="message">Message</label>
-                            <textarea name="message" id="message" placeholder="Type your message here..."></textarea>
+                            <textarea name="message" id="message" rows="5">{{ schedule.message if schedule.type == 'message' else '' }}</textarea>
                         </div>
                     </div>
 
-                    <div id="poll-content" style="display:none;">
+                    <div id="poll-content" style="{{ 'display:block;' if schedule.type == 'poll' else 'display:none;' }}">
                         <div class="form-group">
                             <label for="question">Poll Question</label>
-                            <textarea name="question" id="question" placeholder="What do you want to ask?"></textarea>
+                            <textarea name="question" id="question">{{ schedule.question if schedule.type == 'poll' else '' }}</textarea>
                         </div>
                         <div class="form-group">
                             <label for="options">Poll Options</label>
-                            <input type="text" name="options" id="options" placeholder="Option 1, Option 2, Option 3">
+                            <input type="text" name="options" id="options" 
+                                value="{{ schedule.options|join(', ') if schedule.type == 'poll' and schedule.options else '' }}">
                             <small>Separate options with commas</small>
                         </div>
                         <div class="form-group">
                             <label class="checkbox-label">
-                                <input type="checkbox" name="allow_multi_select" id="allow_multi_select">
+                                <input type="checkbox" name="allow_multi_select" id="allow_multi_select"
+                                    {{ 'checked' if schedule.get('allow_multi_select') else '' }}>
                                 <span>Allow multiple selections</span>
                             </label>
                             <small>If checked, users can select more than one option</small>
@@ -76,21 +90,21 @@
                     <div class="form-group">
                         <label for="recurring">Repeat</label>
                         <select name="recurring" id="recurring" onchange="toggleRecurringOptions()">
-                            <option value="">No - Send Once</option>
-                            <option value="daily">Daily</option>
-                            <option value="weekly">Weekly</option>
-                            <option value="monthly">Monthly</option>
+                            <option value="" {{ 'selected' if not schedule.recurring else '' }}>No - Send Once</option>
+                            <option value="daily" {{ 'selected' if schedule.recurring == 'daily' else '' }}>Daily</option>
+                            <option value="weekly" {{ 'selected' if schedule.recurring == 'weekly' else '' }}>Weekly</option>
+                            <option value="monthly" {{ 'selected' if schedule.recurring == 'monthly' else '' }}>Monthly</option>
                         </select>
                     </div>
 
                     <div class="form-group" id="datetime-group">
                         <label for="datetime">Send Date & Time</label>
-                        <input type="datetime-local" name="datetime" id="datetime" required>
+                        <input type="datetime-local" name="datetime" id="datetime" value="{{ datetime_value }}" required>
                         <small id="recurring-hint" style="display:none;"></small>
                     </div>
 
                     <div class="form-actions">
-                        <button type="submit" class="btn btn-primary">✓ Add Schedule</button>
+                        <button type="submit" class="btn btn-primary">✓ Save Changes</button>
                         <a href="/" class="btn btn-secondary">Cancel</a>
                     </div>
                 </form>
@@ -158,13 +172,9 @@
             }
         }
         
-        // Set default datetime to now + 1 hour
+        // Initialize recurring hint on page load
         document.addEventListener('DOMContentLoaded', function() {
-            const now = new Date();
-            now.setHours(now.getHours() + 1);
-            now.setMinutes(0);
-            const localISOTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-            document.getElementById('datetime').value = localISOTime;
+            toggleRecurringOptions();
         });
     </script>
 </body>
